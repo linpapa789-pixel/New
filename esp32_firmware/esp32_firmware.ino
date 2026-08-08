@@ -41,6 +41,7 @@ static constexpr int UART_TX_PIN   = 17;
 static constexpr int I2C_SDA_PIN   = 21;
 static constexpr int I2C_SCL_PIN   = 22;
 static constexpr int DIODE_ADC_PIN = 4; // CRITICAL FIX: Pin 4 (ADC1) for ESP32-S3
+static constexpr int CLOCK_PROBE_PIN = 5; // NEW: Frequency / PWM counter
 
 // =========================
 // App State & Buffers
@@ -49,7 +50,8 @@ enum class AppMode : uint8_t {
   IDLE,
   DIODE,
   UART,
-  I2C_SCANNER
+  I2C_SCANNER,
+  CLOCK
 };
 
 static volatile AppMode currentMode = AppMode::IDLE;
@@ -65,6 +67,17 @@ static constexpr float EMA_ALPHA = 0.3f; // Smoothing factor
 // UART Data Batching Buffer
 static String uartBatchBuffer = "";
 static unsigned long lastUartSendMs = 0;
+
+// Clock Counter Variables
+static volatile uint32_t pulseCount = 0;
+static unsigned long lastClockMeasureMs = 0;
+portMUX_TYPE pulseMux = portMUX_INITIALIZER_UNLOCKED;
+
+void IRAM_ATTR clockIsr() {
+  portENTER_CRITICAL_ISR(&pulseMux);
+  pulseCount++;
+  portEXIT_CRITICAL_ISR(&pulseMux);
+}
 
 // =========================
 // Helpers & Core Functions
@@ -215,6 +228,12 @@ static void setModeFromString(const char* mode) {
     currentMode = AppMode::UART;
   } else if (strcmp(mode, "i2c_scanner") == 0) {
     currentMode = AppMode::I2C_SCANNER;
+  } else if (strcmp(mode, "clock") == 0) {
+    currentMode = AppMode::CLOCK;
+    portENTER_CRITICAL(&pulseMux);
+    pulseCount = 0;
+    portEXIT_CRITICAL(&pulseMux);
+    lastClockMeasureMs = millis();
   } else {
     currentMode = AppMode::IDLE;
   }
@@ -332,6 +351,10 @@ void setup() {
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
   Wire.setClock(100000);
 
+  // Clock check setup
+  pinMode(CLOCK_PROBE_PIN, INPUT_PULLDOWN);
+  attachInterrupt(digitalPinToInterrupt(CLOCK_PROBE_PIN), clockIsr, RISING);
+
   // Wi-Fi SoftAP
   WiFi.mode(WIFI_AP);
   WiFi.setSleep(false);
@@ -396,6 +419,22 @@ void loop() {
     if (now - lastLiveProbeMs >= 100) {
       lastLiveProbeMs = now;
       sendLiveProbe();
+    }
+  } else if (currentMode == AppMode::CLOCK) {
+    unsigned long now = millis();
+    unsigned long elapsed = now - lastClockMeasureMs;
+    if (elapsed >= 500) { // Measure every 500ms
+      portENTER_CRITICAL(&pulseMux);
+      uint32_t count = pulseCount;
+      pulseCount = 0;
+      portEXIT_CRITICAL(&pulseMux);
+      
+      uint32_t freq = (count * 1000) / elapsed;
+      lastClockMeasureMs = now;
+      
+      char out[128];
+      snprintf(out, sizeof(out), "{\"type\":\"clock\",\"freq\":%lu}", freq);
+      sendTextAll(out);
     }
   }
 

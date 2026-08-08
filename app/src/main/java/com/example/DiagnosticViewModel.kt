@@ -34,7 +34,18 @@ import java.util.concurrent.TimeUnit
 enum class ConnectionMode { NONE, WIFI, BLE }
 enum class ConnectionState { DISCONNECTED, CONNECTING, CONNECTED }
 enum class LogType { INFO, CMD, RES }
-enum class HardwareMode { DIODE, UART, I2C }
+enum class PinStatus { PENDING, PASS, FAIL, SHORT }
+enum class SmartRecordMode { MANUAL, AUTO }
+
+data class PinRecord(
+    val pinNumber: Int,
+    val name: String = "Pin",
+    val referenceValue: Float = 0.400f,
+    val measuredValue: Float? = null,
+    val status: PinStatus = PinStatus.PENDING
+)
+
+enum class HardwareMode { DIODE, UART, I2C, CLOCK, PWM }
 data class LogMessage(val time: String, val type: LogType, val message: String)
 
 data class DiagnosticUiState(
@@ -48,6 +59,9 @@ data class DiagnosticUiState(
     val probeHistory: List<Float> = emptyList(),
     val diodeReferenceValue: Float = 0.450f,
     val i2cDevices: List<String> = emptyList(),
+    val clockFreq: Long = 0L,
+    val pwmFreq: Int = 1000,
+    val pwmDuty: Int = 50,
     val appLogs: List<LogMessage> = emptyList(),
     val uartLogs: List<LogMessage> = emptyList(),
     val isUartPaused: Boolean = false,
@@ -59,7 +73,12 @@ data class DiagnosticUiState(
     val firmwareFileName: String = ".bin ဖိုင်ကို ရွေးချယ်ပါ",
     val flashProgress: Float = 0f,
     val isFlashing: Boolean = false,
-    val isDarkTheme: Boolean = true
+    val isDarkTheme: Boolean = true,
+    val smartRecordMode: SmartRecordMode = SmartRecordMode.MANUAL,
+    val currentPinIndex: Int = 0,
+    val pinRecords: List<PinRecord> = (1..10).map { PinRecord(pinNumber = it, name = "LCD_PIN_$it", referenceValue = 0.450f) },
+    val isRecordingStarted: Boolean = false,
+    val lastStableDiodeValue: Float? = null
 )
 
 class DiagnosticViewModel(application: Application) : AndroidViewModel(application) {
@@ -409,6 +428,10 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
                     }
                     _uiState.update { it.copy(i2cDevices = devices) }
                 }
+                "clock" -> {
+                    val freq = json.optLong("freq", 0L)
+                    _uiState.update { it.copy(clockFreq = freq) }
+                }
             }
         } catch (e: Exception) {
             // Raw text log
@@ -474,19 +497,117 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
     fun sendUartStart() = sendMessage("{\"cmd\": \"uart_start\", \"baud\": ${_uiState.value.uartBaudRate}}")
     fun sendUartStop() = sendMessage("{\"cmd\": \"uart_stop\"}")
 
-    fun setHardwareMode(mode: HardwareMode) {
+    fun sendPwmConfig(freq: Int, duty: Int) {
+        _uiState.update { it.copy(pwmFreq = freq, pwmDuty = duty) }
+        sendMessage("{\"command\": \"set_mode\", \"mode\": \"pwm\", \"freq\": $freq, \"duty\": $duty}")
+    }
+
+    
+    fun setSmartRecordMode(mode: SmartRecordMode) {
+        _uiState.update { it.copy(smartRecordMode = mode) }
+    }
+    
+    fun toggleSmartRecording() {
+        _uiState.update { 
+            if (it.isRecordingStarted) {
+                it.copy(isRecordingStarted = false)
+            } else {
+                // reset if starting fresh
+                it.copy(
+                    isRecordingStarted = true, 
+                    currentPinIndex = 0,
+                    pinRecords = it.pinRecords.map { p -> p.copy(measuredValue = null, status = PinStatus.PENDING) }
+                )
+            }
+        }
+    }
+    
+    fun recordCurrentPin(measured: Float) {
+        val state = _uiState.value
+        if (!state.isRecordingStarted || state.currentPinIndex >= state.pinRecords.size) return
+        
+        val record = state.pinRecords[state.currentPinIndex]
+        val diff = Math.abs(record.referenceValue - measured)
+        val status = when {
+            measured < 0.05f -> PinStatus.SHORT
+            diff <= 0.05f -> PinStatus.PASS
+            else -> PinStatus.FAIL
+        }
+        
+        val newList = state.pinRecords.toMutableList()
+        newList[state.currentPinIndex] = record.copy(measuredValue = measured, status = status)
+        
+        _uiState.update { 
+            it.copy(
+                pinRecords = newList,
+                currentPinIndex = if (it.currentPinIndex < it.pinRecords.size - 1) it.currentPinIndex + 1 else it.currentPinIndex,
+                isRecordingStarted = it.currentPinIndex < it.pinRecords.size - 1
+            )
+        }
+    }
+    
+
+    private var isProbeArmed = true
+    private var consecutiveValidReadings = 0
+    private var lastValidValue = 0f
+
+    fun updateLiveDiode(value: String) {
+        _uiState.update { it.copy(liveProbeValue = value) }
+        val floatVal = value.toFloatOrNull()
+        val isOL = value == "OL" || (floatVal != null && floatVal > 2.5f)
+        
+        if (isOL) {
+            isProbeArmed = true // Probe lifted, re-arm for next pin
+            consecutiveValidReadings = 0
+        }
+        
+        val state = _uiState.value
+        if (state.isRecordingStarted && state.smartRecordMode == SmartRecordMode.AUTO && floatVal != null && !isOL) {
+            if (isProbeArmed) {
+                if (Math.abs(floatVal - lastValidValue) < 0.02f) {
+                    consecutiveValidReadings++
+                } else {
+                    consecutiveValidReadings = 1
+                    lastValidValue = floatVal
+                }
+                
+                // Wait for 3 consecutive stable readings
+                if (consecutiveValidReadings >= 3) {
+                    recordCurrentPin(lastValidValue)
+                    isProbeArmed = false // Wait for OL to re-arm
+                    consecutiveValidReadings = 0
+                }
+            }
+        }
+    }
+
+
+fun setHardwareMode(mode: HardwareMode) {
         stopShortCircuitBeep()
         _uiState.update { it.copy(hardwareMode = mode) }
         val modeStr = when (mode) {
             HardwareMode.DIODE -> "diode"
             HardwareMode.UART -> "uart"
             HardwareMode.I2C -> "i2c_scanner"
+            HardwareMode.CLOCK -> "clock"
+            HardwareMode.PWM -> "pwm"
         }
         sendMessage("{\"command\": \"set_mode\", \"mode\": \"$modeStr\"}")
     }
 
     fun setActiveTab(index: Int) {
         _uiState.update { it.copy(activeTab = index) }
+        when (index) {
+            0 -> {
+                val currentTool = _uiState.value.hardwareMode
+                if (currentTool == HardwareMode.CLOCK) {
+                    setHardwareMode(HardwareMode.DIODE)
+                } else {
+                    setHardwareMode(currentTool)
+                }
+            }
+            1 -> setHardwareMode(HardwareMode.CLOCK)
+        }
     }
 
     fun toggleTheme() {

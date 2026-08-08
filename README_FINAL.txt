@@ -1,0 +1,1 @@
+Guide tab successfully added!

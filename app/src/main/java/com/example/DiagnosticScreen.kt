@@ -26,10 +26,12 @@ import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -93,6 +95,9 @@ fun DiagnosticScreen(viewModel: DiagnosticViewModel, modifier: Modifier = Modifi
             ) {
                 val tabs = listOf(
                     Triple("Tools", Icons.Outlined.Build, Icons.Filled.Build),
+                    Triple("Smart", Icons.Outlined.CheckCircle, Icons.Filled.CheckCircle),
+                    Triple("Guide", Icons.Outlined.Info, Icons.Filled.Info),
+                    Triple("Clock", Icons.Outlined.Refresh, Icons.Filled.Refresh),
                     Triple("Flash", Icons.Outlined.CheckCircle, Icons.Filled.CheckCircle),
                     Triple("Status", Icons.Outlined.Info, Icons.Filled.Info),
                     Triple("Settings", Icons.Outlined.Settings, Icons.Filled.Settings)
@@ -124,9 +129,12 @@ fun DiagnosticScreen(viewModel: DiagnosticViewModel, modifier: Modifier = Modifi
         ) { tab ->
             when (tab) {
                 0 -> ToolsView(viewModel, uiState)
-                1 -> OtgFlashView(viewModel, uiState)
-                2 -> StatusLogsView(viewModel, uiState)
-                3 -> ConfigView(viewModel, uiState)
+                1 -> SmartRecordView(viewModel, uiState)
+                2 -> GuideView()
+                3 -> ClockCheckView(viewModel, uiState)
+                4 -> OtgFlashView(viewModel, uiState)
+                5 -> StatusLogsView(viewModel, uiState)
+                6 -> ConfigView(viewModel, uiState)
             }
         }
     }
@@ -191,7 +199,8 @@ fun ToolsView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                         val modes = listOf(
                             Triple(HardwareMode.DIODE, "DIODE", "⚡"),
                             Triple(HardwareMode.UART, "UART", "📟"),
-                            Triple(HardwareMode.I2C, "I2C", "🔎")
+                            Triple(HardwareMode.I2C, "I2C", "🔎"),
+                            Triple(HardwareMode.PWM, "PWM", "〰")
                         )
 
                         modes.forEach { (mode, label, icon) ->
@@ -230,6 +239,8 @@ fun ToolsView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                     HardwareMode.DIODE -> DiodeModeView(viewModel, uiState)
                     HardwareMode.UART -> UartModeView(viewModel, uiState)
                     HardwareMode.I2C -> I2cModeView(viewModel, uiState)
+                    HardwareMode.CLOCK -> { /* Handled in Clock tab */ }
+                    HardwareMode.PWM -> PwmModeView(viewModel, uiState)
                 }
             }
         }
@@ -892,32 +903,341 @@ fun ConfigView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text("ESP32 Diagnostic App - အသုံးပြုပုံလမ်းညွှန်", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, fontSize = 18.sp)
+                Text("ESP32 + Pi Pico Diagnostic Tool လမ်းညွှန်", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, fontSize = 18.sp)
                 Spacer(Modifier.height(12.dp))
 
                 Text(
-                    "၁။ ချိတ်ဆက်ခြင်း (Connection)",
+                    "၁။ စနစ်ဖွဲ့စည်းပုံ (System Architecture) နှင့် လိုအပ်သော ပစ္စည်းများ",
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    "Tools tab ရှိ 'Connection Mode' တွင် Wi-Fi သို့မဟုတ် Bluetooth ရွေးချယ်၍ ESP32 နှင့် ချိတ်ဆက်ပါ။ Wi-Fi ဖြင့် ချိတ်ဆက်ရန်အတွက် ESP32 မှ ထုတ်လွှင့်သော Hotspot 'ESP_Diag_Tool' ကို ချိတ်ဆက်ပါ။",
+                    """
+                    ဤ Project သည် Phone Service သမားများအတွက် အထူးပြုလုပ်ထားသော Diagnostic Tool ဖြစ်ပြီး ESP32-S3 နှင့် Raspberry Pi Pico (RP2040) တို့ကို တွဲဖက်အသုံးပြုထားပါသည်။ အခြား မည်သည့် Module မှ ထပ်မံဝယ်ယူရန် မလိုအပ်ပါ။
+                    
+                    • ESP32-S3 Board: Wi-Fi/Bluetooth ဆက်သွယ်ရေး၊ WebSocket နှင့် App သို့ Data ပို့ဆောင်ခြင်းတို့ကို တာဝန်ယူသည်။
+                    • Raspberry Pi Pico (RP2040): တိကျသော ADC (12-bit)၊ PWM ထုတ်လွှင့်ခြင်း နှင့် PIO အသုံးပြုကာ မြန်နှုန်းမြင့် တိုင်းတာမှုများကို ပြုလုပ်ပေးမည့် Precision Co-Processor အဖြစ် လုပ်ဆောင်သည်။
+                    • Jumper Wires နှင့် Multimeter Probes များသာ လိုအပ်သည်။
+                    """.trimIndent(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 14.sp,
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
 
                 Text(
-                    "၂။ Hardware Modes",
+                    "၂။ ချိတ်ဆက်ခြင်း (Wiring Diagram)",
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    "• Diode Mode: Probe ဖြင့် Volt တိုင်းတာရန် ဖြစ်ပြီး၊ 0.05V ထက် လျှော့နည်းပါက Short Circuit အဖြစ် သတိပေးသံ (Beep) ထွက်ပေါ်မည် ဖြစ်ပါသည်။\n• UART Mode: Log များကို ကြည့်ရှုရန် ဖြစ်ပြီး PAUSE/RESUME ခလုပ်ဖြင့် အစီအစဉ်အတိုင်း ရပ်တန့်ကြည့်ရှုနိုင်ပါသည်။\n• I2C Mode: I2C လမ်းကြောင်းများအား Scan ဖတ်ရှုရန် ဖြစ်ပါသည်။",
+                    """
+                    [ ESP32-S3 ] <--- UART ---> [ Pi Pico ]
+                    • ESP32 TX (Pin 17) -> Pico RX (Pin 1)
+                    • ESP32 RX (Pin 16) -> Pico TX (Pin 0)
+                    • ESP32 GND -> Pico GND
+                    • ESP32 3.3V -> Pico 3V3 (Power မျှသုံးရန်)
+                    """.trimIndent(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+
+                Text(
+                    "၃။ လက်တွေ့ အသုံးတည့်မည့် လုပ်ဆောင်ချက်များ (Practical Solutions)",
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    """
+                    ၁။ Precision Diode & Short Circuit Detection (Pico ADC0 - Pin 26):
+                    Pico ၏ 12-bit ADC ကို အသုံးပြု၍ ဖုန်းဘုတ်ပေါ်ရှိ လိုင်းများ၏ Diode တန်ဖိုးနှင့် Voltage ကို တိကျစွာတိုင်းတာမည်။ 0.05V အောက်ရောက်ပါက Short Circuit အဖြစ် Beep သံဖြင့် သတိပေးမည်။
+
+                    ၂။ PWM Signal Injector (Pico PWM - Pin 15):
+                    ပြင်ပ Module မလိုဘဲ Pico မှ တိုက်ရိုက် PWM လှိုင်းထုတ်ပေးကာ LCD Backlight နှင့် Charge Pump IC များကို လှုံ့ဆော် (Wake-up) စမ်းသပ်နိုင်ပါသည်။
+
+                    ၃။ High-Speed Logic Analyzer (Pico PIO - Pin 2,3,4,5):
+                    Pico ၏ PIO (Programmable I/O) ကို သုံး၍ ဖုန်း၏ I2C/SPI/UART Boot Log များကို အလွန်မြန်ဆန်သော နှုန်းဖြင့် ဖမ်းယူစစ်ဆေးနိုင်ပါသည်။
+
+                    ၄။ Sleep Clock Monitor (Pico Pin 16):
+                    ဖုန်းများ၏ 32.768kHz Sleep Clock နှင့် အခြား Oscillator Frequency များကို အတိအကျ တိုင်းတာပေးနိုင်ပါသည်။
+                    """.trimIndent(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 14.sp,
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
+                
+                Text(
+                    "၄။ ချိတ်ဆက်အသုံးပြုနည်း (App Usage)",
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    "Tools tab တွင် Wi-Fi သို့မဟုတ် BLE ရွေးချယ်ချိတ်ဆက်ပါ။ Wi-Fi အတွက် 'ESP_Pico_Diag' ကို ချိတ်ဆက်ပြီး Tools, Clock, PWM အစရှိသော Tab များမှတဆင့် လိုအပ်သော လုပ်ဆောင်ချက်များကို ရွေးချယ်အသုံးပြုနိုင်ပါသည်။",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ClockCheckView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Clock Frequency Monitor", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.height(16.dp))
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(120.dp)
+                        .background(Color(0xFF0D1117), RoundedCornerShape(8.dp))
+                        .border(1.dp, MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "${uiState.clockFreq}",
+                            fontSize = 48.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = Color(0xFF3FB950)
+                        )
+                        Text(
+                            text = "Hz",
+                            fontSize = 18.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    "Connect Pin 5 (ESP32-S3) to the signal source to measure its frequency.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun PwmModeView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("PWM Generator (Pico)", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(8.dp))
+            Text("Inject PWM signal to test circuits (e.g., LCD backlight).", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(16.dp))
+
+            Text("Frequency: ${uiState.pwmFreq} Hz", color = MaterialTheme.colorScheme.onSurface)
+            Slider(
+                value = uiState.pwmFreq.toFloat(),
+                onValueChange = { viewModel.sendPwmConfig(it.toInt(), uiState.pwmDuty) },
+                valueRange = 100f..10000f,
+                colors = SliderDefaults.colors(thumbColor = MaterialTheme.colorScheme.primary, activeTrackColor = MaterialTheme.colorScheme.primary)
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            Text("Duty Cycle: ${uiState.pwmDuty}%", color = MaterialTheme.colorScheme.onSurface)
+            Slider(
+                value = uiState.pwmDuty.toFloat(),
+                onValueChange = { viewModel.sendPwmConfig(uiState.pwmFreq, it.toInt()) },
+                valueRange = 0f..100f,
+                colors = SliderDefaults.colors(thumbColor = MaterialTheme.colorScheme.secondary, activeTrackColor = MaterialTheme.colorScheme.secondary)
+            )
+        }
+    }
+}
+
+
+@Composable
+fun SmartRecordView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Header Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    "Smart Diode Assistant",
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 18.sp
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Memory scan for LCD sockets and multi-pin connectors",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                Spacer(Modifier.height(16.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Mode: " + if(uiState.smartRecordMode == SmartRecordMode.AUTO) "Auto-Advance" else "Manual Save",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    
+                    Row {
+                        FilterChip(
+                            selected = uiState.smartRecordMode == SmartRecordMode.MANUAL,
+                            onClick = { viewModel.setSmartRecordMode(SmartRecordMode.MANUAL) },
+                            label = { Text("Manual") }
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        FilterChip(
+                            selected = uiState.smartRecordMode == SmartRecordMode.AUTO,
+                            onClick = { viewModel.setSmartRecordMode(SmartRecordMode.AUTO) },
+                            label = { Text("Auto") }
+                        )
+                    }
+                }
+                
+                Spacer(Modifier.height(16.dp))
+                
+                Button(
+                    onClick = { viewModel.toggleSmartRecording() },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (uiState.isRecordingStarted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Text(if (uiState.isRecordingStarted) "STOP RECORDING" else "START RECORDING", fontFamily = FontFamily.Monospace)
+                }
+            }
+        }
+        
+        // Live Value & Manual Action
+        if (uiState.isRecordingStarted) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
+                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        uiState.liveProbeValue + " V",
+                        fontSize = 32.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                
+                if (uiState.smartRecordMode == SmartRecordMode.MANUAL) {
+                    Spacer(Modifier.width(16.dp))
+                    Button(
+                        onClick = { 
+                            uiState.liveProbeValue.toFloatOrNull()?.let { 
+                                viewModel.recordCurrentPin(it) 
+                            }
+                        },
+                        modifier = Modifier.height(72.dp)
+                    ) {
+                        Text("SAVE\nPIN", fontFamily = FontFamily.Monospace, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    }
+                }
+            }
+        }
+        
+        // Pin List
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(uiState.pinRecords.size) { index ->
+                val record = uiState.pinRecords[index]
+                val isActive = uiState.isRecordingStarted && uiState.currentPinIndex == index
+                
+                val bgColor = when {
+                    isActive -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                    record.status == PinStatus.PASS -> Color(0xFF1B5E20).copy(alpha = 0.2f)
+                    record.status == PinStatus.FAIL -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+                    record.status == PinStatus.SHORT -> MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
+                    else -> MaterialTheme.colorScheme.surface
+                }
+                
+                val statusText = when (record.status) {
+                    PinStatus.PENDING -> "--"
+                    PinStatus.PASS -> "PASS"
+                    PinStatus.FAIL -> "FAIL"
+                    PinStatus.SHORT -> "SHORT"
+                }
+                
+                val statusColor = when (record.status) {
+                    PinStatus.PENDING -> MaterialTheme.colorScheme.onSurfaceVariant
+                    PinStatus.PASS -> Color(0xFF4CAF50)
+                    PinStatus.FAIL -> MaterialTheme.colorScheme.error
+                    PinStatus.SHORT -> MaterialTheme.colorScheme.error
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(
+                            if (isActive) 2.dp else 1.dp,
+                            if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                            RoundedCornerShape(4.dp)
+                        )
+                        .background(bgColor)
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("Pin ${record.pinNumber}: ${record.name}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                        Text("Ref: ${record.referenceValue}V", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = if (record.measuredValue != null) String.format("%.3f V", record.measuredValue) else "--",
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(statusText, fontSize = 10.sp, color = statusColor, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
         }
     }
