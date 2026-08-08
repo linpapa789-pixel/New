@@ -1,0 +1,6 @@
+{
+  "name": "Diagnostic Tool",
+  "description": "Mobile phone diagnostic tool connecting via WiFi and BLE to an ESP32.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

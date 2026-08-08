@@ -1,0 +1,3 @@
+- Updated `DiagnosticUiState` to hold `wifiIp` and `wifiPort`
+- Added input fields to the UI in Wi-Fi connection mode for users to manually specify IP and Port.
+- Modified `connectWifi()` in `DiagnosticViewModel` to construct the WebSocket URL dynamically based on the inputted IP and Port.

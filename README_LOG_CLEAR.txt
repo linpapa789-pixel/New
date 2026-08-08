@@ -1,0 +1,3 @@
+- Added `clearLogs()` function to ViewModel
+- Added "ရှင်းရန်" (Clear Logs) button in the UART logs terminal UI
+- Added "ရှင်းရန်" (Clear Logs) button in the Flash Logs terminal UI

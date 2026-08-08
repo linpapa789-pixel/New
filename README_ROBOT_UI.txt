@@ -1,0 +1,6 @@
+- Implemented real Robot UI/UX design features
+- Added `cornerRadius` and `fontFamily` parameters to `AppTheme`
+- `RobotTheme` now forces a global `FontFamily.Monospace` and `0.dp` corner radius (sharp edges instead of rounded corners)
+- Added an outer screen border in Robot mode
+- Made the Header Title dynamic (shows "[ ESP32_DIAGNOSTICS_SYS_V2.0 ]" in Robot Mode)
+- Changed circle shapes and badges to cut-corner squares when in Robot mode

@@ -1,0 +1,2 @@
+- UI translated to Myanmar Unicode.
+- Added Save Log button logic using ActivityResultContracts.CreateDocument.

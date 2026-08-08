@@ -1,0 +1,2 @@
+- Updated RobotTheme to use Black (0xFF121212) and Gray (0xFFBDBDBD) color mixture as requested
+- Removed neon green and cyan accents from RobotTheme

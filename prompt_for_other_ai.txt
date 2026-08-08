@@ -1,0 +1,36 @@
+The user is developing an Android companion app that connects to an ESP32-S3 over WiFi and acts as a diagnostic tool (reading ADCs, I2C scanner, UART monitor). They are having trouble flashing the ESP32-S3 via their Android app's OTG Flasher ("invalid header: 0xffffffff" and bootlooping, WiFi not starting).
+
+They requested:
+1. A rewritten ESP32-S3 firmware (.ino) that exactly matches the JSON communication protocol expected by their Android app.
+2. An explanation or prompt focusing on the "logic core" and compatibility with the APK.
+
+# Android App Protocol Expectations
+
+1. **Connection**: The app connects to the ESP32 via a WebSocket at `ws://192.168.4.1:80/ws`.
+2. **WiFi Setup**: The ESP32 must create an Access Point (SoftAP). The app currently expects SSID: `ESP_Diag_Tool`, Password: `password123`.
+3. **Incoming Commands (JSON)**:
+   - `{"cmd": "diode"}` -> App requests a one-off diode reading.
+   - `{"cmd": "i2c"}` -> App requests an I2C bus scan.
+   - `{"cmd": "uart_start", "baud": 115200}` -> App requests to start UART monitoring on a specific baud rate.
+   - `{"cmd": "uart_stop"}` -> App requests to stop UART monitoring.
+   - `{"command": "set_mode", "mode": "diode"|"uart"|"i2c_scanner"}` -> App tells ESP32 which mode is currently active on the UI.
+4. **Outgoing Responses (JSON)**:
+   - `{"type": "live_probe", "value": "1.23"}` -> Sent continuously (e.g., every 100ms) for the oscilloscope view.
+   - `{"type": "diode", "value": "1.23"}` -> Response to the `diode` command.
+   - `{"type": "i2c", "devices": ["0x3C", "0x57"]}` -> Response to the `i2c` command.
+5. **UART Logs**:
+   - The app expects UART data to be sent either as raw text or wrapped in JSON: `{"type": "uart", "log": "..."}`. The provided firmware just sent raw strings.
+
+# Flashing Issue (The `invalid header: 0xffffffff` Error)
+
+The user is trying to flash the ESP32-S3 over USB OTG directly from Android. The logs show:
+`Erasing 0x4e00 bytes at offset 0x0`
+`Erasing 0xc00 bytes at offset 0x8000`
+`Erasing 0xe6c90 bytes at offset 0x10000`
+
+This implies they are flashing three bin files (Bootloader, Partitions, and Firmware).
+The `invalid header: 0xffffffff` and SHA-256 comparison failures in the ESP32 boot log indicate that the bootloader or partition table is either missing, corrupt, or flashed to the wrong offset for the ESP32-S3.
+ESP32-S3 typically requires the bootloader at offset `0x0`, partition table at `0x8000`, and the application at `0x10000`. 
+However, depending on the Arduino Core version, the ESP32-S3 bootloader might need to be flashed at `0x0` instead of the older ESP32's `0x1000`. The user's screenshot shows they used `0x0` for the bootloader, which is correct for S3. The failure might be because the `.bin` files were compiled for standard ESP32 instead of ESP32-S3, or the flash mode (DIO vs QIO) is wrong.
+
+Please generate a prompt that the user can copy-paste to another AI to generate the exact ESP32-S3 `.ino` code, and explain the flashing issue.

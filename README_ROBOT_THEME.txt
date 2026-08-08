@@ -1,0 +1,4 @@
+- Created AppTheme data class for customizable colors
+- Implemented ModernTheme (Default, purple/white) and RobotTheme (Neon Green, dark mode)
+- Added Config tab (Settings) with a Switch to toggle the theme dynamically
+- Migrated all hardcoded hex colors to use the current theme dynamically

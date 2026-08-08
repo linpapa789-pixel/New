@@ -1,0 +1,4 @@
+- Integrated usb-serial-for-android
+- Added USB Device detection and permission handling
+- Implemented DTR/RTS Bootloader reset sequence for ESP32-S3
+- Added Log translations in Myanmar

@@ -1,0 +1,36 @@
+name: Build ESP32 Firmware
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Compile Arduino sketch for ESP32-S3
+      uses: arduino/compile-sketches@v1
+      with:
+        fqbn: esp32:esp32:esp32s3
+        platforms: |
+          - name: esp32:esp32
+            source-url: https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+        libraries: |
+          - name: ArduinoJson
+          - source-url: https://github.com/me-no-dev/AsyncTCP.git
+          - source-url: https://github.com/me-no-dev/ESPAsyncWebServer.git
+        sketch-paths: |
+          esp32_firmware
+        cli-compile-flags: |
+          - --export-binaries
+
+    - name: Upload firmware artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: esp32s3-firmware
+        path: esp32_firmware/build/

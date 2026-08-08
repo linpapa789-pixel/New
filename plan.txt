@@ -1,0 +1,4 @@
+1. Update AndroidManifest.xml for USB Host feature.
+2. Update DiagnosticUiState and ViewModel to support OTG states, USB device lists, and firmware file selection.
+3. Update DiagnosticScreen to include a tab selector and a new OTG Firmware Update UI.
+4. Implement UsbManager detection logic.
