@@ -267,7 +267,6 @@ static void onWsEvent(AsyncWebSocket* serverPtr,
 
     case WS_EVT_ERROR:
     case WS_EVT_PONG:
-    case WS_EVT_BIN:
     default:
       break;
   }
