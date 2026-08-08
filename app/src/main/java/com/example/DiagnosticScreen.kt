@@ -6,51 +6,44 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.foundation.Canvas
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -107,7 +100,7 @@ fun DiagnosticScreen(viewModel: DiagnosticViewModel, modifier: Modifier = Modifi
                 tabs.forEachIndexed { index, (title, unselectedIcon, selectedIcon) ->
                     val isSelected = uiState.activeTab == index
                     val iconColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                    
+
                     Icon(
                         imageVector = if (isSelected) selectedIcon else unselectedIcon,
                         contentDescription = title,
@@ -190,7 +183,7 @@ fun ToolsView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                 Column {
                     Text("SELECT_PROBE_MODE", fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
                     Spacer(Modifier.height(12.dp))
-                    
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
@@ -200,7 +193,7 @@ fun ToolsView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                             Triple(HardwareMode.UART, "UART", "📟"),
                             Triple(HardwareMode.I2C, "I2C", "🔎")
                         )
-                        
+
                         modes.forEach { (mode, label, icon) ->
                             val isSelected = uiState.hardwareMode == mode
                             Box(
@@ -229,7 +222,7 @@ fun ToolsView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                 }
             }
         }
-        
+
         // --- 2. Dynamic Data Display based on Hardware Mode ---
         item {
             Crossfade(targetState = uiState.hardwareMode, animationSpec = tween(300)) { currentMode ->
@@ -240,7 +233,7 @@ fun ToolsView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                 }
             }
         }
-        
+
         // Connection section at the bottom of tools view for quick access
         item {
             ConnectionCard(viewModel, uiState)
@@ -272,9 +265,9 @@ fun DiodeModeView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                     }
                     Row(verticalAlignment = Alignment.Bottom) {
                         Text(
-                            uiState.liveProbeValue, 
-                            fontSize = 42.sp, 
-                            fontFamily = FontFamily.Monospace, 
+                            uiState.liveProbeValue,
+                            fontSize = 42.sp,
+                            fontFamily = FontFamily.Monospace,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         if (uiState.liveProbeValue != "--" && uiState.liveProbeValue != "0.00") {
@@ -282,14 +275,14 @@ fun DiodeModeView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                         }
                     }
                 }
-                
+
                 Spacer(Modifier.height(16.dp))
-                
-                // Real-Time Oscilloscope Graph
+
+                // Real-Time Oscilloscope Graph (Optimized Canvas)
                 val graphColor = MaterialTheme.colorScheme.secondary
                 val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
                 val history = uiState.probeHistory
-                
+
                 Canvas(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -315,18 +308,16 @@ fun DiodeModeView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                             strokeWidth = 1f
                         )
                     }
-                    
+
                     // Draw glowing line graph
                     if (history.isNotEmpty()) {
                         val path = Path()
                         val maxPoints = 50
                         val pointSpacing = size.width / (maxPoints - 1)
-                        // Assume voltage range 0 to 3.3V for scaling
                         val maxValue = 3.3f
-                        
+
                         history.forEachIndexed { index, value ->
                             val x = index * pointSpacing
-                            // Invert y because canvas 0,0 is top-left
                             val y = size.height - ((value.coerceIn(0f, maxValue) / maxValue) * size.height)
                             if (index == 0) {
                                 path.moveTo(x, y)
@@ -334,14 +325,14 @@ fun DiodeModeView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                                 path.lineTo(x, y)
                             }
                         }
-                        
-                        // Draw outer glow (thicker, lower alpha)
+
+                        // Outer glow
                         drawPath(
                             path = path,
                             color = graphColor.copy(alpha = 0.3f),
                             style = Stroke(width = 6f)
                         )
-                        // Draw core line
+                        // Core line
                         drawPath(
                             path = path,
                             color = graphColor,
@@ -351,7 +342,7 @@ fun DiodeModeView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                 }
             }
         }
-        
+
         // Diode Smart Comparison
         Box(
             modifier = Modifier
@@ -378,7 +369,7 @@ fun DiodeModeView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                     }
                 }
                 Spacer(Modifier.height(16.dp))
-                
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -389,21 +380,21 @@ fun DiodeModeView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                     val referenceVal = uiState.diodeReferenceValue
                     val isShort = currentVal != null && currentVal < 0.05f
                     val isBad = currentVal != null && kotlin.math.abs(currentVal - referenceVal) > 0.1f
-                    
+
                     val (displayColor, statusText) = when {
                         isShort -> MaterialTheme.colorScheme.error to "SHORT"
                         isBad -> MaterialTheme.colorScheme.error to "FAIL"
                         currentVal != null -> MaterialTheme.colorScheme.secondary to "PASS"
                         else -> MaterialTheme.colorScheme.onSurface to "WAIT"
                     }
-                    
+
                     Row(verticalAlignment = Alignment.Bottom) {
                         Text(uiState.diodeValue, fontSize = 36.sp, fontFamily = FontFamily.Monospace, color = displayColor)
                         if (uiState.diodeValue != "--") {
                             Text("V", fontFamily = FontFamily.Monospace, fontSize = 18.sp, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp), color = displayColor)
                         }
                     }
-                    
+
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
                             statusText,
@@ -419,7 +410,7 @@ fun DiodeModeView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                         }
                     }
                 }
-                
+
                 Spacer(Modifier.height(16.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("Adjust Reference:", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -439,12 +430,14 @@ fun DiodeModeView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
 @Composable
 fun UartModeView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
     val listState = rememberLazyListState()
-    LaunchedEffect(uiState.uartLogs.size) {
-        if (uiState.uartLogs.isNotEmpty()) {
+
+    // Controlled auto-scrolling that respects pause state
+    LaunchedEffect(uiState.uartLogs.size, uiState.isUartPaused) {
+        if (!uiState.isUartPaused && uiState.uartLogs.isNotEmpty()) {
             listState.animateScrollToItem(uiState.uartLogs.size - 1)
         }
     }
-    
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -453,22 +446,42 @@ fun UartModeView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
             .padding(16.dp)
     ) {
         Column {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text("> UART_SERIAL_MONITOR", fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Button(
                         onClick = { viewModel.sendUartStart() },
                         shape = RoundedCornerShape(4.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                         modifier = Modifier.height(28.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary, contentColor = MaterialTheme.colorScheme.onSecondary)
                     ) {
                         Text("START", fontFamily = FontFamily.Monospace, fontSize = 10.sp)
                     }
                     Button(
+                        onClick = { viewModel.toggleUartPause() },
+                        shape = RoundedCornerShape(4.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                        modifier = Modifier.height(28.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (uiState.isUartPaused) Color(0xFFFBBF24) else MaterialTheme.colorScheme.tertiary,
+                            contentColor = if (uiState.isUartPaused) Color.Black else MaterialTheme.colorScheme.onTertiary
+                        )
+                    ) {
+                        Text(
+                            if (uiState.isUartPaused) "RESUME" else "PAUSE",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp
+                        )
+                    }
+                    Button(
                         onClick = { viewModel.sendUartStop() },
                         shape = RoundedCornerShape(4.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                         modifier = Modifier.height(28.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError)
                     ) {
@@ -476,9 +489,9 @@ fun UartModeView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                     }
                 }
             }
-            
+
             Spacer(Modifier.height(12.dp))
-            
+
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                 Text("BAUD RATE:", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 val bauds = listOf(9600, 115200, 1500000)
@@ -497,9 +510,9 @@ fun UartModeView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                     }
                 }
             }
-            
+
             Spacer(Modifier.height(12.dp))
-            
+
             Surface(
                 modifier = Modifier.fillMaxWidth().height(300.dp),
                 color = MaterialTheme.colorScheme.background,
@@ -513,9 +526,9 @@ fun UartModeView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                     items(uiState.uartLogs) { log ->
                         Row(modifier = Modifier.padding(vertical = 2.dp)) {
                             Text(
-                                "[${log.time}] ", 
-                                color = MaterialTheme.colorScheme.onSurfaceVariant, 
-                                fontSize = 10.sp, 
+                                "[${log.time}] ",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 10.sp,
                                 fontFamily = FontFamily.Monospace
                             )
                             val msgColor = when (log.type) {
@@ -524,9 +537,9 @@ fun UartModeView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                                 LogType.RES -> MaterialTheme.colorScheme.secondary
                             }
                             Text(
-                                log.message, 
-                                color = msgColor, 
-                                fontSize = 10.sp, 
+                                log.message,
+                                color = msgColor,
+                                fontSize = 10.sp,
                                 fontFamily = FontFamily.Monospace
                             )
                         }
@@ -574,7 +587,7 @@ fun I2cModeView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                 }
             }
             Spacer(Modifier.height(16.dp))
-            
+
             if (uiState.i2cDevices.isEmpty()) {
                 Text("BUS_IDLE / NO_ACK", fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.padding(8.dp))
             } else {
@@ -586,7 +599,7 @@ fun I2cModeView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                     uiState.i2cDevices.forEach { device ->
                         val knownIc = icDictionary[device]
                         val displayStr = if (knownIc != null) "$device ($knownIc)" else device
-                        
+
                         Box(
                             modifier = Modifier
                                 .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
@@ -594,9 +607,9 @@ fun I2cModeView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                                 .padding(horizontal = 10.dp, vertical = 6.dp)
                         ) {
                             Text(
-                                displayStr, 
-                                fontSize = 12.sp, 
-                                fontFamily = FontFamily.Monospace, 
+                                displayStr,
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace,
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
@@ -617,7 +630,7 @@ fun ConnectionCard(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text("Connection Mode", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(16.dp))
-            
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -626,7 +639,7 @@ fun ConnectionCard(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
             ) {
                 val isWifi = uiState.connectionMode == ConnectionMode.WIFI
                 val isBle = uiState.connectionMode == ConnectionMode.BLE
-                
+
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -637,7 +650,7 @@ fun ConnectionCard(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        "Wi-Fi", 
+                        "Wi-Fi",
                         fontWeight = if(isWifi) FontWeight.Bold else FontWeight.Medium,
                         color = if(isWifi) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -652,13 +665,13 @@ fun ConnectionCard(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        "Bluetooth", 
+                        "Bluetooth",
                         fontWeight = if(isBle) FontWeight.Bold else FontWeight.Medium,
                         color = if(isBle) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
-            
+
             AnimatedVisibility(visible = uiState.connectionMode == ConnectionMode.WIFI) {
                 Column {
                     Spacer(Modifier.height(16.dp))
@@ -728,10 +741,10 @@ fun StatusLogsView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                 )
             }
         }
-        
+
         Surface(
             modifier = Modifier.fillMaxWidth().weight(1f),
-            color = Color(0xFF0D1117), // Deep terminal background
+            color = Color(0xFF0D1117),
             shape = RoundedCornerShape(12.dp),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant)
         ) {
@@ -742,9 +755,9 @@ fun StatusLogsView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                 items(uiState.appLogs) { log ->
                     Row(modifier = Modifier.padding(vertical = 2.dp)) {
                         Text(
-                            "[${log.time}] ", 
-                            color = Color(0xFF8B949E), 
-                            fontSize = 11.sp, 
+                            "[${log.time}] ",
+                            color = Color(0xFF8B949E),
+                            fontSize = 11.sp,
                             fontFamily = FontFamily.Monospace
                         )
                         val msgColor = when (log.type) {
@@ -753,9 +766,9 @@ fun StatusLogsView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                             LogType.RES -> Color(0xFF3FB950)
                         }
                         Text(
-                            log.message, 
-                            color = msgColor, 
-                            fontSize = 11.sp, 
+                            log.message,
+                            color = msgColor,
+                            fontSize = 11.sp,
                             fontFamily = FontFamily.Monospace
                         )
                     }
@@ -779,7 +792,7 @@ fun OtgFlashView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("OTG Firmware Flash", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.height(16.dp))
-                
+
                 OutlinedTextField(
                     value = uiState.usbDeviceName,
                     onValueChange = {},
@@ -792,9 +805,9 @@ fun OtgFlashView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                         }
                     }
                 )
-                
+
                 Spacer(Modifier.height(12.dp))
-                
+
                 OutlinedTextField(
                     value = uiState.firmwareFileName,
                     onValueChange = {},
@@ -807,9 +820,9 @@ fun OtgFlashView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                         }
                     }
                 )
-                
+
                 Spacer(Modifier.height(24.dp))
-                
+
                 if (uiState.isFlashing || uiState.flashProgress > 0) {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -826,7 +839,7 @@ fun OtgFlashView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                     }
                     Spacer(Modifier.height(16.dp))
                 }
-                
+
                 Button(
                     onClick = { viewModel.startFlashing() },
                     modifier = Modifier.fillMaxWidth().height(48.dp),
@@ -843,7 +856,7 @@ fun OtgFlashView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
 @Composable
 fun ConfigView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
     val scrollState = rememberScrollState()
-    
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -872,7 +885,7 @@ fun ConfigView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                 }
             }
         }
-        
+
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -881,75 +894,29 @@ fun ConfigView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("ESP32 Diagnostic App - အသုံးပြုပုံလမ်းညွှန်", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, fontSize = 18.sp)
                 Spacer(Modifier.height(12.dp))
-                
+
                 Text(
                     "၁။ ချိတ်ဆက်ခြင်း (Connection)",
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    "Tools tab ရှိ 'Connection Mode' တွင် Wi-Fi သို့မဟုတ် Bluetooth ရွေးချယ်၍ ESP32 နှင့် ချိတ်ဆက်ပါ။ Wi-Fi ဖြင့် ချိတ်ဆက်ရန်အတွက် ESP32 မှ ထုတ်လွှင့်သော (ဥပမာ - 'ESP_Diag_Tool') Hotspot ကို ချိတ်ဆက်ပြီး IP နှင့် Port (Default: 192.168.4.1:80) အတိုင်းထား၍ ချိတ်ဆက်နိုင်ပါသည်။",
+                    "Tools tab ရှိ 'Connection Mode' တွင် Wi-Fi သို့မဟုတ် Bluetooth ရွေးချယ်၍ ESP32 နှင့် ချိတ်ဆက်ပါ။ Wi-Fi ဖြင့် ချိတ်ဆက်ရန်အတွက် ESP32 မှ ထုတ်လွှင့်သော Hotspot 'ESP_Diag_Tool' ကို ချိတ်ဆက်ပါ။",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 14.sp,
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
-                
-                Text(
-                    "၂။ Hardware Modes (2 Probes စနစ်)",
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    "• Diode Mode: ဖုန်းဘုတ်များရှိ လမ်းကြောင်းများကို တိုင်းတာရန်အတွက် ဖြစ်သည်။ Zero-Lag Live Probe ဖြင့် တိုက်ရိုက်တိုင်းတာနိုင်ပြီး၊ 'Read' ကိုနှိပ်၍ Reference Value နှင့် နှိုင်းယှဉ်စစ်ဆေးနိုင်ပါသည်။\n• UART Mode: Boot Logs များကို တိုက်ရိုက်ဖတ်ရှုရန် ဖြစ်သည်။ 'Start' ကိုနှိပ်၍ Log များကို ဖတ်ရှုနိုင်ပြီး ဖတ်ရှုပြီးပါက 'Stop' ကိုပြန်နှိပ်ပေးပါ။\n• I2C Mode: I2C လမ်းကြောင်းများ၏ အလုပ်လုပ်ပုံနှင့် ချိတ်ဆက်ထားသော IC များ (ဥပမာ 0x3C) ကို Scan ဖတ်ရှုနိုင်ပါသည်။ Probe 1 ကို SDA အဖြစ်နှင့် Probe 2 ကို SCL အဖြစ် အသုံးပြုပါ။",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
-                
-                Text(
-                    "၃။ မှတ်တမ်းများ (Logs) နှင့် OTG Flash",
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    "• Status Tab တွင် App ၏ လုပ်ဆောင်ချက် မှတ်တမ်းများနှင့် UART မှတ်တမ်းများကို သီးခြားစီ ဖတ်ရှုနိုင်ပါသည်။ လိုအပ်ပါက .txt ဖိုင်အနေဖြင့် Export ထုတ်ယူနိုင်ပါသည်။\n• Flash Tab တွင် ဖုန်းနှင့် ESP32 ကို OTG (USB) ဖြင့် ချိတ်ဆက်ပြီး Firmware (.bin) ဖိုင်ကို တိုက်ရိုက်တင်နိုင်ပါသည်။",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
-            }
-        }
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("ဆောင်ရန် နှင့် ရှောင်ရန်များ (Do's and Don'ts)", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error, fontSize = 18.sp)
-                Spacer(Modifier.height(12.dp))
-                
                 Text(
-                    "ဆောင်ရန် (Do's)",
+                    "၂။ Hardware Modes",
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onErrorContainer
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    "• တိုင်းတာမှုများ မပြုလုပ်မီ ESP32 နှင့် App ချိတ်ဆက်မှု (Connected) ဖြစ်/မဖြစ် အရင်သေချာစစ်ဆေးပါ။\n• I2C Scan ပြုလုပ်ရာတွင် Probe 1 (SDA) နှင့် Probe 2 (SCL) ကို မှန်ကန်စွာ ချိတ်ဆက်ပါ။\n• UART ဖတ်ရှုပြီးပါက အခြား Mode သို့ မပြောင်းမီ 'Stop' ကို အမြဲတမ်း နှိပ်ပေးပါ။\n• OTG Flash ပြုလုပ်ရာတွင် ဖုန်းဘက်မှ USB OTG ခွင့်ပြုချက် (Permission) တောင်းခံလာပါက Allow လုပ်ပေးပါ။",
-                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    "• Diode Mode: Probe ဖြင့် Volt တိုင်းတာရန် ဖြစ်ပြီး၊ 0.05V ထက် လျှော့နည်းပါက Short Circuit အဖြစ် သတိပေးသံ (Beep) ထွက်ပေါ်မည် ဖြစ်ပါသည်။\n• UART Mode: Log များကို ကြည့်ရှုရန် ဖြစ်ပြီး PAUSE/RESUME ခလုပ်ဖြင့် အစီအစဉ်အတိုင်း ရပ်တန့်ကြည့်ရှုနိုင်ပါသည်။\n• I2C Mode: I2C လမ်းကြောင်းများအား Scan ဖတ်ရှုရန် ဖြစ်ပါသည်။",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 14.sp,
                     modifier = Modifier.padding(bottom = 12.dp)
-                )
-                
-                Text(
-                    "ရှောင်ရန် (Don'ts)",
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onErrorContainer
-                )
-                Text(
-                    "• Voltage များသော နေရာများကို တိုက်ရိုက်တိုင်းတာခြင်း (3.3V အထက်) ကို လုံးဝ ရှောင်ကြဉ်ပါ။ ESP32 ပျက်စီးနိုင်ပါသည်။\n• Firmware (OTG Flash) တင်နေစဉ်အတွင်း USB ကြိုးကို ဖြုတ်လိုက်ခြင်း လုံးဝ မပြုလုပ်ပါနှင့်။\n• UART Mode 'Start' လုပ်ထားစဉ် Diode သို့မဟုတ် I2C Mode သို့ ချက်ချင်း ပြောင်းလဲအသုံးပြုခြင်းမျိုး မပြုလုပ်ပါနှင့်။ 'Stop' အရင်နှိပ်ပါ။",
-                    color = MaterialTheme.colorScheme.onErrorContainer,
-                    fontSize = 14.sp
                 )
             }
         }

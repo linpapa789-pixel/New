@@ -1,41 +1,35 @@
 package com.example
-import android.Manifest
-import androidx.core.app.ActivityCompat
-import android.content.pm.PackageManager
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Application
+import android.app.PendingIntent
 import android.bluetooth.*
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
+import android.content.Intent
+import android.hardware.usb.UsbDeviceConnection
+import android.hardware.usb.UsbManager
+import android.media.AudioManager
+import android.media.ToneGenerator
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.hoho.android.usbserial.driver.UsbSerialPort
+import com.hoho.android.usbserial.driver.UsbSerialProber
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import okhttp3.*
 import org.json.JSONObject
+import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
-
-import android.hardware.usb.UsbDeviceConnection
-import com.hoho.android.usbserial.driver.UsbSerialProber
-import com.hoho.android.usbserial.driver.UsbSerialPort
-import java.io.IOException
-import android.app.PendingIntent
-import android.content.Intent
-import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.Job
-
 
 enum class ConnectionMode { NONE, WIFI, BLE }
 enum class ConnectionState { DISCONNECTED, CONNECTING, CONNECTED }
@@ -56,10 +50,11 @@ data class DiagnosticUiState(
     val i2cDevices: List<String> = emptyList(),
     val appLogs: List<LogMessage> = emptyList(),
     val uartLogs: List<LogMessage> = emptyList(),
+    val isUartPaused: Boolean = false,
     val uartBaudRate: Int = 115200,
-    
+
     // OTG Features
-    val activeTab: Int = 0, // 0 = Tools, 1 = OTG, 2 = Status, 3 = Config
+    val activeTab: Int = 0, // 0 = Tools, 1 = Flash, 2 = Status, 3 = Config
     val usbDeviceName: String = "စက်မတွေ့ရှိပါ",
     val firmwareFileName: String = ".bin ဖိုင်ကို ရွေးချယ်ပါ",
     val flashProgress: Float = 0f,
@@ -76,6 +71,7 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.SECONDS)
         .build()
+
     private var wifiReconnectJob: Job? = null
     private var isAutoReconnectEnabled = false
     private var webSocket: WebSocket? = null
@@ -87,37 +83,77 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
     private var bleScanCallback: ScanCallback? = null
 
     private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+    private val usbManager = application.getSystemService(Context.USB_SERVICE) as UsbManager
 
-    private val usbManager = application.getSystemService(Context.USB_SERVICE) as android.hardware.usb.UsbManager
+    // --- Audio Continuity Beep for Short-Circuit Detection ---
+    private var toneGenerator: ToneGenerator? = null
+    private var beepJob: Job? = null
+    @Volatile
+    private var isBeeping = false
+
+    // --- UART Log Buffer for Pause State ---
+    private val bufferedUartLogs = Collections.synchronizedList(mutableListOf<LogMessage>())
 
     init {
-        addAppLog(LogType.INFO, "ESP32 Diagnostic Kernel v1.0.4")
+        try {
+            toneGenerator = ToneGenerator(AudioManager.STREAM_MUSIC, 80)
+        } catch (e: Exception) {
+            Log.e("DiagnosticViewModel", "Failed to initialize ToneGenerator", e)
+        }
+        addAppLog(LogType.INFO, "ESP32 Diagnostic Kernel v1.0.5")
     }
 
     private fun currentTime(): String = timeFormat.format(Date())
 
     private fun addAppLog(type: LogType, message: String) {
-        _uiState.update { state -> 
+        _uiState.update { state ->
             val newLogs = (state.appLogs + LogMessage(currentTime(), type, message)).takeLast(1000)
-            state.copy(appLogs = newLogs) 
+            state.copy(appLogs = newLogs)
         }
     }
 
     private fun addUartLog(message: String) {
-        _uiState.update { state -> 
-            val newLogs = (state.uartLogs + LogMessage(currentTime(), LogType.RES, message)).takeLast(1000)
-            state.copy(uartLogs = newLogs) 
+        val newLog = LogMessage(currentTime(), LogType.RES, message)
+        if (_uiState.value.isUartPaused) {
+            bufferedUartLogs.add(newLog)
+            if (bufferedUartLogs.size > 1000) {
+                bufferedUartLogs.removeAt(0)
+            }
+        } else {
+            _uiState.update { state ->
+                val newLogs = (state.uartLogs + newLog).takeLast(1000)
+                state.copy(uartLogs = newLogs)
+            }
         }
     }
-    
+
+    fun toggleUartPause() {
+        _uiState.update { state ->
+            val nextPausedState = !state.isUartPaused
+            if (!nextPausedState) {
+                // Unpaused: Flush buffered logs into UI state
+                val flushedLogs: List<LogMessage>
+                synchronized(bufferedUartLogs) {
+                    flushedLogs = ArrayList(bufferedUartLogs)
+                    bufferedUartLogs.clear()
+                }
+                val combinedLogs = (state.uartLogs + flushedLogs).takeLast(1000)
+                state.copy(isUartPaused = false, uartLogs = combinedLogs)
+            } else {
+                state.copy(isUartPaused = true)
+            }
+        }
+    }
+
     fun clearLogs() {
+        bufferedUartLogs.clear()
         _uiState.update { state ->
             state.copy(appLogs = emptyList(), uartLogs = emptyList())
         }
         addAppLog(LogType.INFO, "မှတ်တမ်းများကို ရှင်းလင်းလိုက်ပါပြီ")
     }
 
-    fun saveLogsToFile(context: Context, uri: android.net.Uri) {
+    fun saveLogsToFile(context: Context, uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 context.contentResolver.openOutputStream(uri)?.use { outputStream ->
@@ -127,7 +163,7 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
                     val uartLogsText = _uiState.value.uartLogs.joinToString("\n") { log ->
                         "[${log.time}] ${log.message}"
                     }
-                    val logsText = "--- APP LOGS ---\n$appLogsText\n\n--- UART LOGS ---\n$uartLogsText" 
+                    val logsText = "--- APP LOGS ---\n$appLogsText\n\n--- UART LOGS ---\n$uartLogsText"
                     outputStream.write(logsText.toByteArray())
                 }
                 withContext(Dispatchers.Main) {
@@ -141,7 +177,6 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-
     fun updateWifiIp(ip: String) {
         _uiState.update { it.copy(wifiIp = ip) }
     }
@@ -153,42 +188,44 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
     fun connectWifi() {
         isAutoReconnectEnabled = true
         wifiReconnectJob?.cancel()
-        
-        disconnectInternal() // disconnect without clearing auto-reconnect flag
+
+        disconnectInternal()
         _uiState.update { it.copy(connectionMode = ConnectionMode.WIFI, connectionState = ConnectionState.CONNECTING) }
-        
+
         val ip = _uiState.value.wifiIp
         val port = _uiState.value.wifiPort
         val url = "ws://$ip:$port/ws"
-        
+
         try {
             val request = Request.Builder().url(url).build()
             webSocket = client.newWebSocket(request, object : WebSocketListener() {
-            override fun onOpen(webSocket: WebSocket, response: Response) {
-                _uiState.update { it.copy(connectionState = ConnectionState.CONNECTED) }
-                addAppLog(LogType.INFO, "$url သို့ ချိတ်ဆက်ပြီးပါပြီ")
-            }
-            override fun onMessage(webSocket: WebSocket, text: String) {
-                handleIncomingMessage(text)
-            }
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                _uiState.update { it.copy(connectionState = ConnectionState.DISCONNECTED) }
-                addAppLog(LogType.INFO, "Wi-Fi ချိတ်ဆက်မှု ပြတ်တောက်သွားပါပြီ")
-                handleReconnect()
-            }
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                _uiState.update { it.copy(connectionState = ConnectionState.DISCONNECTED) }
-                addAppLog(LogType.INFO, "Wi-Fi အမှားအယွင်း: ${t.message}")
-                handleReconnect()
-            }
-        })
+                override fun onOpen(webSocket: WebSocket, response: Response) {
+                    _uiState.update { it.copy(connectionState = ConnectionState.CONNECTED) }
+                    addAppLog(LogType.INFO, "$url သို့ ချိတ်ဆက်ပြီးပါပြီ")
+                }
+                override fun onMessage(webSocket: WebSocket, text: String) {
+                    handleIncomingMessage(text)
+                }
+                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                    _uiState.update { it.copy(connectionState = ConnectionState.DISCONNECTED) }
+                    stopShortCircuitBeep()
+                    addAppLog(LogType.INFO, "Wi-Fi ချိတ်ဆက်မှု ပြတ်တောက်သွားပါပြီ")
+                    handleReconnect()
+                }
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                    _uiState.update { it.copy(connectionState = ConnectionState.DISCONNECTED) }
+                    stopShortCircuitBeep()
+                    addAppLog(LogType.INFO, "Wi-Fi အမှားအယွင်း: ${t.message}")
+                    handleReconnect()
+                }
+            })
         } catch (e: Exception) {
             _uiState.update { it.copy(connectionState = ConnectionState.DISCONNECTED) }
             addAppLog(LogType.INFO, "URL မှားယွင်းနေပါသည်: ${e.message}")
-            isAutoReconnectEnabled = false // stop auto reconnect for invalid URL
+            isAutoReconnectEnabled = false
         }
     }
-    
+
     private fun handleReconnect() {
         if (isAutoReconnectEnabled) {
             wifiReconnectJob?.cancel()
@@ -203,16 +240,17 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
             }
         }
     }
-    
+
     @SuppressLint("MissingPermission")
     private fun disconnectInternal() {
+        stopShortCircuitBeep()
         webSocket?.cancel()
         webSocket = null
-        
+
         try {
             bleScanCallback?.let { bleScanner?.stopScan(it) }
         } catch (e: Exception) {}
-        
+
         if (bluetoothGatt != null) {
             try {
                 bluetoothGatt?.disconnect()
@@ -258,14 +296,14 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
                 _uiState.update { it.copy(connectionState = ConnectionState.DISCONNECTED) }
             }
         }
-        
+
         try {
             bleScanCallback?.let { bleScanner?.startScan(it) }
         } catch (e: Exception) {
             addAppLog(LogType.INFO, "ရှာဖွေမှု စတင်၍မရပါ")
             _uiState.update { it.copy(connectionState = ConnectionState.DISCONNECTED) }
         }
-        
+
         viewModelScope.launch {
             delay(10000)
             if (_uiState.value.connectionState != ConnectionState.CONNECTED && bluetoothGatt == null) {
@@ -283,6 +321,7 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
                 gatt.requestMtu(512)
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 _uiState.update { it.copy(connectionState = ConnectionState.DISCONNECTED) }
+                stopShortCircuitBeep()
                 addAppLog(LogType.INFO, "BLE ချိတ်ဆက်မှု ပြတ်တောက်သွားပါပြီ")
             }
         }
@@ -329,28 +368,36 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
         try {
             val json = JSONObject(text)
             val type = json.optString("type")
-            
+
             if (type == "uart" || type == "uart_log") {
                 addUartLog(json.optString("log", text))
                 return
             }
-            
-            // Only log non-live messages to prevent log spam & UI lag
+
             if (type != "live_probe") {
                 addAppLog(LogType.RES, text)
             }
-            
+
             when (type) {
                 "live_probe" -> {
                     val valueStr = json.optString("value", "0.00")
                     val valueFloat = valueStr.toFloatOrNull() ?: 0f
-                    _uiState.update { state -> 
+                    
+                    // Check for short circuit beep trigger (< 0.05V)
+                    checkShortCircuitBeep(valueFloat)
+
+                    _uiState.update { state ->
                         val newHistory = (state.probeHistory + valueFloat).takeLast(50)
                         state.copy(liveProbeValue = valueStr, probeHistory = newHistory)
                     }
                 }
                 "diode" -> {
-                    _uiState.update { it.copy(diodeValue = json.optString("value", "--")) }
+                    val valueStr = json.optString("value", "--")
+                    val valueFloat = valueStr.toFloatOrNull()
+                    if (valueFloat != null) {
+                        checkShortCircuitBeep(valueFloat)
+                    }
+                    _uiState.update { it.copy(diodeValue = valueStr) }
                 }
                 "i2c" -> {
                     val devicesArray = json.optJSONArray("devices")
@@ -364,9 +411,33 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
                 }
             }
         } catch (e: Exception) {
-            // Not JSON, assume it's raw UART data
+            // Raw text log
             addUartLog(text)
         }
+    }
+
+    // Trigger audio beep when diode/live_probe voltage drops below 0.05V (SHORT circuit)
+    private fun checkShortCircuitBeep(voltage: Float) {
+        if (_uiState.value.hardwareMode == HardwareMode.DIODE && voltage in 0.0001f..0.0499f) {
+            if (!isBeeping) {
+                isBeeping = true
+                beepJob?.cancel()
+                beepJob = viewModelScope.launch(Dispatchers.Default) {
+                    while (isBeeping && _uiState.value.hardwareMode == HardwareMode.DIODE) {
+                        toneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP, 100)
+                        delay(150)
+                    }
+                }
+            }
+        } else {
+            stopShortCircuitBeep()
+        }
+    }
+
+    private fun stopShortCircuitBeep() {
+        isBeeping = false
+        beepJob?.cancel()
+        beepJob = null
     }
 
     @SuppressLint("MissingPermission")
@@ -391,6 +462,7 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
 
     fun sendDiode() = sendMessage("{\"cmd\": \"diode\"}")
     fun sendI2c() = sendMessage("{\"cmd\": \"i2c\"}")
+
     fun setUartBaudRate(baud: Int) {
         _uiState.update { it.copy(uartBaudRate = baud) }
     }
@@ -402,7 +474,8 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
     fun sendUartStart() = sendMessage("{\"cmd\": \"uart_start\", \"baud\": ${_uiState.value.uartBaudRate}}")
     fun sendUartStop() = sendMessage("{\"cmd\": \"uart_stop\"}")
 
-        fun setHardwareMode(mode: HardwareMode) {
+    fun setHardwareMode(mode: HardwareMode) {
+        stopShortCircuitBeep()
         _uiState.update { it.copy(hardwareMode = mode) }
         val modeStr = when (mode) {
             HardwareMode.DIODE -> "diode"
@@ -427,7 +500,7 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
             val name = device.productName ?: "ESP32-S3 (ID: ${device.deviceId})"
             _uiState.update { it.copy(usbDeviceName = name) }
             addAppLog(LogType.INFO, "USB စက်တွေ့ရှိပါသည်: $name")
-            
+
             if (!usbManager.hasPermission(device)) {
                 addAppLog(LogType.INFO, "USB ခွင့်ပြုချက် တောင်းခံနေပါသည်...")
                 val intent = Intent("com.example.USB_PERMISSION")
@@ -458,10 +531,10 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
             addAppLog(LogType.INFO, "ကျေးဇူးပြု၍ USB စက်ကို အရင်ရှာဖွေ/ချိတ်ဆက်ပါ။")
             return
         }
-        
+
         _uiState.update { it.copy(isFlashing = true, flashProgress = 0f) }
         addAppLog(LogType.INFO, "ESP32-S3 OTG ချိတ်ဆက်မှုကို စမ်းသပ်နေပါသည်...")
-        
+
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val availableDrivers = UsbSerialProber.getDefaultProber().findAllDrivers(usbManager)
@@ -472,7 +545,7 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
                     }
                     return@launch
                 }
-                
+
                 val driver = availableDrivers[0]
                 val connection = usbManager.openDevice(driver.device)
                 if (connection == null) {
@@ -482,17 +555,16 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
                     }
                     return@launch
                 }
-                
+
                 val port = driver.ports[0]
                 port.open(connection)
                 port.setParameters(115200, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE)
-                
+
                 withContext(Dispatchers.Main) {
                     addAppLog(LogType.INFO, "USB ချိတ်ဆက်မှု အောင်မြင်ပါသည်။")
                     addAppLog(LogType.INFO, "ESP32 ကို Bootloader Mode သို့ ပြောင်းနေပါသည် (RTS/DTR)...")
                 }
-                
-                // ESP32 EN/IO0 Reset Sequence (Enter Bootloader)
+
                 port.dtr = false
                 port.rts = true
                 Thread.sleep(100)
@@ -501,11 +573,11 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
                 Thread.sleep(100)
                 port.dtr = false
                 port.rts = false
-                
+
                 withContext(Dispatchers.Main) {
                     addAppLog(LogType.INFO, "Bootloader သို့ ဝင်ရောက်သွားပါပြီ။")
-                    addAppLog(LogType.INFO, "မှတ်ချက် - အပြည့်အစုံ ဖန်းဝဲတင်ရန်အတွက် esptool protocol အပြည့်အစုံရေးသားရန် လိုအပ်ပါသည်။ (SLIP encoding, chunking, MD5 verification စသည်တို့ ပါဝင်မည်ဖြစ်ပါသည်။)")
-                    
+                    addAppLog(LogType.INFO, "မှတ်ချက် - အပြည့်အစုံ ဖန်းဝဲတင်ရန်အတွက် esptool protocol အပြည့်အစုံရေးသားရန် လိုအပ်ပါသည်။")
+
                     port.close()
                     _uiState.update { it.copy(isFlashing = false, flashProgress = 1.0f) }
                 }
@@ -530,6 +602,11 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
     @SuppressLint("MissingPermission")
     override fun onCleared() {
         super.onCleared()
+        stopShortCircuitBeep()
+        try {
+            toneGenerator?.release()
+            toneGenerator = null
+        } catch (e: Exception) {}
         disconnect()
         try {
             bleScanCallback?.let { bleScanner?.stopScan(it) }
