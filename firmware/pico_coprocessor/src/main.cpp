@@ -38,8 +38,8 @@ void setup() {
   Serial.begin(115200);
   
   // UART connection to ESP32
-  Serial1.setTX(ESP_TX_PIN);
-  Serial1.setRX(ESP_RX_PIN);
+  // Serial1.setTX(ESP_TX_PIN); // Not needed, default is GP0
+  // Serial1.setRX(ESP_RX_PIN); // Not needed, default is GP1
   Serial1.begin(115200);
 
   // Pin Setups
@@ -48,8 +48,8 @@ void setup() {
   digitalWrite(PWM_OUT_PIN, LOW);
   
   // Wire for I2C scanner
-  Wire.setSDA(I2C_SDA_PIN);
-  Wire.setSCL(I2C_SCL_PIN);
+  // Wire.setSDA(I2C_SDA_PIN); // Not needed, default is GP4
+  // Wire.setSCL(I2C_SCL_PIN); // Not needed, default is GP5
   Wire.begin();
 
   Serial1.println("{\"status\": \"Pico Initialized\"}");
@@ -113,7 +113,7 @@ void processCommand(String jsonStr) {
       int freq = doc["freq"] | 1000;
       int duty = doc["duty"] | 50;
       
-      analogWriteFreq(freq);
+      // analogWriteFreq(freq); // Not supported in mbed core, using default frequency
       // Pico analogWrite uses 0-255 by default, calculate duty
       int pwmVal = (duty * 255) / 100;
       analogWrite(PWM_OUT_PIN, pwmVal);
