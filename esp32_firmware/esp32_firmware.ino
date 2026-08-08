@@ -25,7 +25,8 @@ static constexpr int UART_RX_PIN  = 16;
 static constexpr int UART_TX_PIN  = 17;
 static constexpr int I2C_SDA_PIN  = 21;
 static constexpr int I2C_SCL_PIN  = 22;
-static constexpr int DIODE_ADC_PIN = 32;
+// ESP32-S3 အတွက် ADC1 Pin (Pin 32 အစား Pin 4 ကို ပြောင်းထားပါသည်)
+static constexpr int DIODE_ADC_PIN = 4; 
 
 // =========================
 // State
@@ -50,15 +51,11 @@ static size_t uartLineLen = 0;
 // Helpers
 // =========================
 static float readDiodeVoltage() {
-  // Reads the ADC and converts to volts.
-  // analogReadMilliVolts() is supported by current ESP32 Arduino cores.
   uint32_t mv = analogReadMilliVolts(DIODE_ADC_PIN);
   return mv / 1000.0f;
 }
 
 static void sendTextAll(const char* json) {
-  // AsyncWebSocket manages client lifetimes internally.
-  // cleanupClients() is called in loop() to avoid stale references.
   ws.textAll(json);
 }
 
@@ -77,12 +74,10 @@ static void sendLiveProbe() {
 }
 
 static void sendI2CScanResult() {
-  // Typical device counts are small, so 1KB is enough for practical use.
   StaticJsonDocument<1024> doc;
   doc["type"] = "i2c";
   JsonArray devices = doc.createNestedArray("devices");
 
-  // Scan standard 7-bit address range.
   for (uint8_t addr = 1; addr < 127; addr++) {
     Wire.beginTransmission(addr);
     uint8_t error = Wire.endTransmission();
@@ -108,8 +103,6 @@ static void startUart(uint32_t baud) {
   }
 
   uartBaud = baud;
-
-  // Serial2 on ESP32-S3 with explicit RX/TX pins.
   Serial2.begin(uartBaud, SERIAL_8N1, UART_RX_PIN, UART_TX_PIN);
   uartRunning = true;
   currentMode = AppMode::UART;
@@ -146,9 +139,7 @@ static void processUartInput() {
   while (Serial2.available() > 0) {
     char c = (char)Serial2.read();
 
-    if (c == '\r') {
-      continue;
-    }
+    if (c == '\r') continue;
 
     if (c == '\n') {
       if (uartLineLen > 0) {
@@ -162,7 +153,6 @@ static void processUartInput() {
     if (uartLineLen < sizeof(uartLine) - 1) {
       uartLine[uartLineLen++] = c;
     } else {
-      // Buffer full: flush partial line to avoid losing long streams completely.
       uartLine[uartLineLen] = '\0';
       sendUartLog(uartLine);
       uartLineLen = 0;
@@ -178,7 +168,7 @@ static void setModeFromString(const char* mode) {
 
   if (strcmp(mode, "diode") == 0) {
     currentMode = AppMode::DIODE;
-    lastLiveProbeMs = 0; // send immediately after mode switch
+    lastLiveProbeMs = 0; 
   } else if (strcmp(mode, "uart") == 0) {
     currentMode = AppMode::UART;
   } else if (strcmp(mode, "i2c_scanner") == 0) {
@@ -191,13 +181,8 @@ static void setModeFromString(const char* mode) {
 static void handleIncomingJson(uint8_t* data, size_t len) {
   StaticJsonDocument<512> doc;
   DeserializationError err = deserializeJson(doc, data, len);
-  if (err) {
-    return;
-  }
+  if (err) return;
 
-  // Support both shapes requested by the app:
-  // 1) {"cmd":"..."}
-  // 2) {"command":"set_mode","mode":"..."}
   const char* cmd = doc["cmd"] | nullptr;
   const char* command = doc["command"] | nullptr;
 
@@ -207,14 +192,10 @@ static void handleIncomingJson(uint8_t* data, size_t len) {
     return;
   }
 
-  if (!cmd) {
-    return;
-  }
+  if (!cmd) return;
 
   if (strcmp(cmd, "diode") == 0) {
-    // One-shot diode reading
     sendDiodeValue("diode");
-    // If the UI has already set mode to diode, loop() will stream live probes.
     return;
   }
 
@@ -247,24 +228,17 @@ static void onWsEvent(AsyncWebSocket* serverPtr,
 
   switch (type) {
     case WS_EVT_CONNECT:
-      // No per-client state is allocated, which helps avoid leaks.
-      break;
-
     case WS_EVT_DISCONNECT:
-      // AsyncWebSocket cleans up client objects internally.
       break;
-
     case WS_EVT_DATA: {
       AwsFrameInfo* info = (AwsFrameInfo*)arg;
       if (!info) return;
 
-      // Handle only complete text frames.
       if (info->opcode == WS_TEXT && info->final && info->index == 0 && info->len == len) {
         handleIncomingJson(data, len);
       }
       break;
     }
-
     case WS_EVT_ERROR:
     case WS_EVT_PONG:
     default:
