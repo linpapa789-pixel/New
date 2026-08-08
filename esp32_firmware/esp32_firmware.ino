@@ -277,9 +277,9 @@ class BleServerCallbacks : public BLEServerCallbacks {
 
 class BleRxCallbacks : public BLECharacteristicCallbacks {
     void onWrite(BLECharacteristic *pCharacteristic) override {
-      std::string rxValue = pCharacteristic->getValue();
+      String rxValue = pCharacteristic->getValue();
       if (rxValue.length() > 0) {
-        handleIncomingJson((uint8_t*)rxValue.data(), rxValue.length());
+        handleIncomingJson((uint8_t*)rxValue.c_str(), rxValue.length());
       }
     }
 };
