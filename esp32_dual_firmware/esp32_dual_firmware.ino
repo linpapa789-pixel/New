@@ -30,10 +30,11 @@ BLECharacteristic* pTxCharacteristic = nullptr;
 bool bleClientConnected = false;
 
 // =========================
-// Pico Connection Pins
+// Pico Connection Pins (FIXED FOR ESP32-S3 N16R8)
 // =========================
-static constexpr int PICO_UART_RX = 16; // Connect to Pico TX (Pin 0)
-static constexpr int PICO_UART_TX = 17; // Connect to Pico RX (Pin 1)
+// ပြဿနာဖြစ်စေသော Pin 16 နှင့် 17 အစား လွတ်ကင်းသော Pin 18 နှင့် 19 ကို အစားထိုးထားပါသည်
+static constexpr int PICO_UART_RX = 18; // Connect to Pico TX
+static constexpr int PICO_UART_TX = 19; // Connect to Pico RX
 String picoBuffer = "";
 
 // Send JSON string over both WebSocket and BLE
@@ -47,7 +48,7 @@ static void sendTextAll(const char* json) {
 
 // Pass incoming App JSON directly to Pico
 static void handleAppCommand(const char* json) {
-  Serial1.println(json); // Send to Pico
+  Serial1.println(json); // Send to Pico via UART1
 }
 
 // Parse BLE/WS payload
@@ -66,9 +67,11 @@ static void parseIncomingBytes(uint8_t* data, size_t len) {
 class BleServerCallbacks : public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) override {
       bleClientConnected = true;
+      Serial.println("BLE Connected");
     }
     void onDisconnect(BLEServer* pServer) override {
       bleClientConnected = false;
+      Serial.println("BLE Disconnected");
       BLEDevice::startAdvertising();
     }
 };
@@ -98,48 +101,63 @@ static void onWsEvent(AsyncWebSocket* serverPtr, AsyncWebSocketClient* client, A
 // Arduino Setup & Loop
 // =========================
 void setup() {
-  Serial.begin(115200); // Debug
+  // Debug UART
+  Serial.begin(115200); 
   
-  // UART1 to Pico
+  // UART1 to Pico (Using New Safe Pins)
   Serial1.begin(115200, SERIAL_8N1, PICO_UART_RX, PICO_UART_TX);
 
-  // Wi-Fi SoftAP
+  // Wi-Fi SoftAP Setup
   WiFi.mode(WIFI_AP);
   WiFi.softAPConfig(AP_IP, AP_GW, AP_MASK);
   WiFi.softAP(AP_SSID, AP_PASSWORD);
+  Serial.println("SoftAP Started");
 
-  // WebSocket
+  // WebSocket Setup
   ws.onEvent(onWsEvent);
   server.addHandler(&ws);
   server.begin();
 
-  // BLE
+  // BLE Setup
   BLEDevice::init(BLE_DEVICE_NAME);
   pBleServer = BLEDevice::createServer();
   pBleServer->setCallbacks(new BleServerCallbacks());
+  
   BLEService *pService = pBleServer->createService(SERVICE_UUID);
   pTxCharacteristic = pService->createCharacteristic(CHARACTERISTIC_UUID_TX, BLECharacteristic::PROPERTY_NOTIFY);
   pTxCharacteristic->addDescriptor(new BLE2902());
+  
   BLECharacteristic *pRxCharacteristic = pService->createCharacteristic(CHARACTERISTIC_UUID_RX, BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR);
   pRxCharacteristic->setCallbacks(new BleRxCallbacks());
+  
   pService->start();
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(SERVICE_UUID);
   pAdvertising->setScanResponse(true);
   BLEDevice::startAdvertising();
+  
+  Serial.println("System Ready!");
 }
 
 void loop() {
   ws.cleanupClients();
 
-  // Forward Pico logs/data to App
+  // Forward Pico logs/data to App via WebSocket and BLE
   while (Serial1.available()) {
       char c = Serial1.read();
       if (c == '\n') {
-          sendTextAll(picoBuffer.c_str());
-          picoBuffer = "";
+          if (picoBuffer.length() > 0) {
+             sendTextAll(picoBuffer.c_str());
+             picoBuffer = "";
+          }
       } else {
           picoBuffer += c;
+          
+          // Buffer Memory Protection (Limits length to 512 bytes)
+          if (picoBuffer.length() >= 512) {
+              sendTextAll(picoBuffer.c_str());
+              picoBuffer = "";
+          }
       }
   }
   delay(1);
