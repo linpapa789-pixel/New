@@ -7,13 +7,16 @@ import android.app.PendingIntent
 import android.bluetooth.*
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.hardware.usb.UsbDeviceConnection
+import android.content.IntentFilter
+import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.net.Uri
+import android.os.Build
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -68,7 +71,7 @@ data class DiagnosticUiState(
     val uartBaudRate: Int = 115200,
 
     // OTG Features
-    val activeTab: Int = 0, // 0 = Tools, 1 = Flash, 2 = Status, 3 = Config
+    val activeTab: Int = 0, // 0 = Tools, 1 = Smart, 2 = Guide, 3 = Clock, 4 = Flash, 5 = Status, 6 = Config
     val usbDeviceName: String = "စက်မတွေ့ရှိပါ",
     val firmwareFileName: String = ".bin ဖိုင်ကို ရွေးချယ်ပါ",
     val flashProgress: Float = 0f,
@@ -113,6 +116,26 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
     // --- UART Log Buffer for Pause State ---
     private val bufferedUartLogs = Collections.synchronizedList(mutableListOf<LogMessage>())
 
+    // --- USB Permission Logic ---
+    private val ACTION_USB_PERMISSION = "com.example.USB_PERMISSION"
+    private val usbReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (ACTION_USB_PERMISSION == intent.action) {
+                synchronized(this) {
+                    val device: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
+                    if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
+                        device?.apply {
+                            addAppLog(LogType.INFO, "USB ခွင့်ပြုချက် ရရှိပါပြီ။")
+                        }
+                    } else {
+                        addAppLog(LogType.INFO, "USB ခွင့်ပြုချက် ငြင်းပယ်ခံရပါသည်။")
+                    }
+                }
+            }
+        }
+    }
+
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     init {
         try {
             toneGenerator = ToneGenerator(AudioManager.STREAM_MUSIC, 80)
@@ -120,6 +143,14 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
             Log.e("DiagnosticViewModel", "Failed to initialize ToneGenerator", e)
         }
         addAppLog(LogType.INFO, "ESP32 Diagnostic Kernel v1.0.5")
+
+        // Register USB Receiver (Fix 4: Handle User Permission clicks)
+        val filter = IntentFilter(ACTION_USB_PERMISSION)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            application.registerReceiver(usbReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            application.registerReceiver(usbReceiver, filter)
+        }
     }
 
     private fun currentTime(): String = timeFormat.format(Date())
@@ -325,9 +356,19 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
 
         viewModelScope.launch {
             delay(10000)
-            if (_uiState.value.connectionState != ConnectionState.CONNECTED && bluetoothGatt == null) {
+            if (_uiState.value.connectionState != ConnectionState.CONNECTED) {
                 try { bleScanCallback?.let { bleScanner?.stopScan(it) } } catch (e: Exception) {}
-                addAppLog(LogType.INFO, "ရှာဖွေချိန် ကုန်ဆုံးသွားပါပြီ")
+                
+                // Fix 3: Force Disconnect if BLE hangs
+                if (bluetoothGatt != null) {
+                    try {
+                        bluetoothGatt?.disconnect()
+                        bluetoothGatt?.close()
+                    } catch (e: Exception) {}
+                    bluetoothGatt = null
+                }
+                
+                addAppLog(LogType.INFO, "ရှာဖွေချိန် ကုန်ဆုံးသွားပါပြီ (သို့) ချိတ်ဆက်မှု မအောင်မြင်ပါ")
                 _uiState.update { it.copy(connectionState = ConnectionState.DISCONNECTED) }
             }
         }
@@ -400,14 +441,17 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
             when (type) {
                 "live_probe" -> {
                     val valueStr = json.optString("value", "0.00")
-                    val valueFloat = valueStr.toFloatOrNull() ?: 0f
                     
+                    // Fix 1: Pass to updateLiveDiode to trigger Smart Auto-Record logic properly
+                    updateLiveDiode(valueStr)
+                    
+                    val valueFloat = valueStr.toFloatOrNull() ?: 0f
                     // Check for short circuit beep trigger (< 0.05V)
                     checkShortCircuitBeep(valueFloat)
 
                     _uiState.update { state ->
                         val newHistory = (state.probeHistory + valueFloat).takeLast(50)
-                        state.copy(liveProbeValue = valueStr, probeHistory = newHistory)
+                        state.copy(probeHistory = newHistory)
                     }
                 }
                 "diode" -> {
@@ -502,7 +546,6 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
         sendMessage("{\"command\": \"set_mode\", \"mode\": \"pwm\", \"freq\": $freq, \"duty\": $duty}")
     }
 
-    
     fun setSmartRecordMode(mode: SmartRecordMode) {
         _uiState.update { it.copy(smartRecordMode = mode) }
     }
@@ -545,7 +588,6 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
             )
         }
     }
-    
 
     private var isProbeArmed = true
     private var consecutiveValidReadings = 0
@@ -581,8 +623,7 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-
-fun setHardwareMode(mode: HardwareMode) {
+    fun setHardwareMode(mode: HardwareMode) {
         stopShortCircuitBeep()
         _uiState.update { it.copy(hardwareMode = mode) }
         val modeStr = when (mode) {
@@ -598,7 +639,8 @@ fun setHardwareMode(mode: HardwareMode) {
     fun setActiveTab(index: Int) {
         _uiState.update { it.copy(activeTab = index) }
         when (index) {
-            0 -> {
+            // Fix 2: Both Tools (0) and Smart (1) share Diode/selected tool modes. 
+            0, 1 -> {
                 val currentTool = _uiState.value.hardwareMode
                 if (currentTool == HardwareMode.CLOCK) {
                     setHardwareMode(HardwareMode.DIODE)
@@ -606,7 +648,7 @@ fun setHardwareMode(mode: HardwareMode) {
                     setHardwareMode(currentTool)
                 }
             }
-            1 -> setHardwareMode(HardwareMode.CLOCK)
+            3 -> setHardwareMode(HardwareMode.CLOCK) // Only index 3 is Clock Mode
         }
     }
 
@@ -624,7 +666,7 @@ fun setHardwareMode(mode: HardwareMode) {
 
             if (!usbManager.hasPermission(device)) {
                 addAppLog(LogType.INFO, "USB ခွင့်ပြုချက် တောင်းခံနေပါသည်...")
-                val intent = Intent("com.example.USB_PERMISSION")
+                val intent = Intent(ACTION_USB_PERMISSION)
                 val pendingIntent = PendingIntent.getBroadcast(
                     getApplication(),
                     0,
@@ -732,6 +774,12 @@ fun setHardwareMode(mode: HardwareMode) {
         try {
             bleScanCallback?.let { bleScanner?.stopScan(it) }
         } catch (e: Exception) {}
+        
+        // Clean up USB Receiver
+        try {
+            getApplication<Application>().unregisterReceiver(usbReceiver)
+        } catch (e: Exception) {}
+        
         client.dispatcher.executorService.shutdown()
         client.connectionPool.evictAll()
         client.cache?.close()
