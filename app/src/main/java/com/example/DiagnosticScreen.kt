@@ -633,6 +633,15 @@ fun I2cModeView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
 
 @Composable
 fun ConnectionCard(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
+    // Fix 2: Manage UI expansion locally without triggering immediate connection
+    var selectedConfig by remember { mutableStateOf(ConnectionMode.WIFI) }
+
+    LaunchedEffect(uiState.connectionMode) {
+        if (uiState.connectionMode != ConnectionMode.NONE) {
+            selectedConfig = uiState.connectionMode
+        }
+    }
+
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -648,8 +657,8 @@ fun ConnectionCard(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
                     .padding(4.dp)
             ) {
-                val isWifi = uiState.connectionMode == ConnectionMode.WIFI
-                val isBle = uiState.connectionMode == ConnectionMode.BLE
+                val isWifi = selectedConfig == ConnectionMode.WIFI
+                val isBle = selectedConfig == ConnectionMode.BLE
 
                 Box(
                     modifier = Modifier
@@ -657,7 +666,7 @@ fun ConnectionCard(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                         .height(40.dp)
                         .clip(RoundedCornerShape(10.dp))
                         .background(if (isWifi) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
-                        .clickable { viewModel.connectWifi() },
+                        .clickable { selectedConfig = ConnectionMode.WIFI },
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -672,7 +681,10 @@ fun ConnectionCard(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                         .height(40.dp)
                         .clip(RoundedCornerShape(10.dp))
                         .background(if (isBle) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
-                        .clickable { viewModel.connectBle() },
+                        .clickable { 
+                            selectedConfig = ConnectionMode.BLE
+                            viewModel.connectBle() 
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -683,7 +695,7 @@ fun ConnectionCard(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                 }
             }
 
-            AnimatedVisibility(visible = uiState.connectionMode == ConnectionMode.WIFI) {
+            AnimatedVisibility(visible = selectedConfig == ConnectionMode.WIFI) {
                 Column {
                     Spacer(Modifier.height(16.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -708,7 +720,7 @@ fun ConnectionCard(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
                         modifier = Modifier.fillMaxWidth().height(48.dp),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("Connect to Wi-Fi")
+                        Text(if (uiState.connectionState == ConnectionState.CONNECTING && uiState.connectionMode == ConnectionMode.WIFI) "Connecting..." else "Connect to Wi-Fi")
                     }
                 }
             }
@@ -1036,6 +1048,10 @@ fun ClockCheckView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
 
 @Composable
 fun PwmModeView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
+    // Fix 1: Use local state to prevent spamming commands while dragging the slider
+    var localFreq by remember(uiState.pwmFreq) { mutableFloatStateOf(uiState.pwmFreq.toFloat()) }
+    var localDuty by remember(uiState.pwmDuty) { mutableFloatStateOf(uiState.pwmDuty.toFloat()) }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -1047,27 +1063,28 @@ fun PwmModeView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
             Text("Inject PWM signal to test circuits (e.g., LCD backlight).", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(16.dp))
 
-            Text("Frequency: ${uiState.pwmFreq} Hz", color = MaterialTheme.colorScheme.onSurface)
+            Text("Frequency: ${localFreq.toInt()} Hz", color = MaterialTheme.colorScheme.onSurface)
             Slider(
-                value = uiState.pwmFreq.toFloat(),
-                onValueChange = { viewModel.sendPwmConfig(it.toInt(), uiState.pwmDuty) },
+                value = localFreq,
+                onValueChange = { localFreq = it },
+                onValueChangeFinished = { viewModel.sendPwmConfig(localFreq.toInt(), uiState.pwmDuty) },
                 valueRange = 100f..10000f,
                 colors = SliderDefaults.colors(thumbColor = MaterialTheme.colorScheme.primary, activeTrackColor = MaterialTheme.colorScheme.primary)
             )
 
             Spacer(Modifier.height(16.dp))
 
-            Text("Duty Cycle: ${uiState.pwmDuty}%", color = MaterialTheme.colorScheme.onSurface)
+            Text("Duty Cycle: ${localDuty.toInt()}%", color = MaterialTheme.colorScheme.onSurface)
             Slider(
-                value = uiState.pwmDuty.toFloat(),
-                onValueChange = { viewModel.sendPwmConfig(uiState.pwmFreq, it.toInt()) },
+                value = localDuty,
+                onValueChange = { localDuty = it },
+                onValueChangeFinished = { viewModel.sendPwmConfig(uiState.pwmFreq, localDuty.toInt()) },
                 valueRange = 0f..100f,
                 colors = SliderDefaults.colors(thumbColor = MaterialTheme.colorScheme.secondary, activeTrackColor = MaterialTheme.colorScheme.secondary)
             )
         }
     }
 }
-
 
 @Composable
 fun SmartRecordView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
