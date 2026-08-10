@@ -11,6 +11,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.media.AudioManager
@@ -70,8 +71,7 @@ data class DiagnosticUiState(
     val isUartPaused: Boolean = false,
     val uartBaudRate: Int = 115200,
 
-    // OTG Features
-    val activeTab: Int = 0, // 0 = Tools, 1 = Smart, 2 = Guide, 3 = Clock, 4 = Flash, 5 = Status, 6 = Config
+    val activeTab: Int = 0,
     val usbDeviceName: String = "စက်မတွေ့ရှိပါ",
     val firmwareFileName: String = ".bin ဖိုင်ကို ရွေးချယ်ပါ",
     val flashProgress: Float = 0f,
@@ -91,7 +91,7 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
     private val client = OkHttpClient.Builder()
         .pingInterval(3, TimeUnit.SECONDS)
         .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(0, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
     private var wifiReconnectJob: Job? = null
@@ -102,21 +102,17 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
     private var bluetoothGatt: BluetoothGatt? = null
     private var writeCharacteristic: BluetoothGattCharacteristic? = null
     private var bleScanner: android.bluetooth.le.BluetoothLeScanner? = null
-    private var bleScanCallback: ScanCallback? = null
+    @Volatile private var bleScanCallback: ScanCallback? = null
 
     private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
     private val usbManager = application.getSystemService(Context.USB_SERVICE) as UsbManager
 
-    // --- Audio Continuity Beep for Short-Circuit Detection ---
     private var toneGenerator: ToneGenerator? = null
     private var beepJob: Job? = null
-    @Volatile
-    private var isBeeping = false
+    @Volatile private var isBeeping = false
 
-    // --- UART Log Buffer for Pause State ---
     private val bufferedUartLogs = Collections.synchronizedList(mutableListOf<LogMessage>())
 
-    // --- USB Permission Logic ---
     private val ACTION_USB_PERMISSION = "com.example.USB_PERMISSION"
     private val usbReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -141,9 +137,8 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
         } catch (e: Exception) {
             Log.e("DiagnosticViewModel", "Failed to initialize ToneGenerator", e)
         }
-        addAppLog(LogType.INFO, "ESP32 Diagnostic Kernel v1.0.5")
+        addAppLog(LogType.INFO, "ESP32 Diagnostic Kernel v1.0.6 FIXED")
 
-        // Register USB Receiver (Fix 4: Handle User Permission clicks)
         val filter = IntentFilter(ACTION_USB_PERMISSION)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             application.registerReceiver(usbReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -165,9 +160,7 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
         val newLog = LogMessage(currentTime(), LogType.RES, message)
         if (_uiState.value.isUartPaused) {
             bufferedUartLogs.add(newLog)
-            if (bufferedUartLogs.size > 1000) {
-                bufferedUartLogs.removeAt(0)
-            }
+            if (bufferedUartLogs.size > 1000) bufferedUartLogs.removeAt(0)
         } else {
             _uiState.update { state ->
                 val newLogs = (state.uartLogs + newLog).takeLast(1000)
@@ -180,7 +173,6 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
         _uiState.update { state ->
             val nextPausedState = !state.isUartPaused
             if (!nextPausedState) {
-                // Unpaused: Flush buffered logs into UI state
                 val flushedLogs: List<LogMessage>
                 synchronized(bufferedUartLogs) {
                     flushedLogs = ArrayList(bufferedUartLogs)
@@ -196,9 +188,7 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
 
     fun clearLogs() {
         bufferedUartLogs.clear()
-        _uiState.update { state ->
-            state.copy(appLogs = emptyList(), uartLogs = emptyList())
-        }
+        _uiState.update { it.copy(appLogs = emptyList(), uartLogs = emptyList()) }
         addAppLog(LogType.INFO, "မှတ်တမ်းများကို ရှင်းလင်းလိုက်ပါပြီ")
     }
 
@@ -226,18 +216,12 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    fun updateWifiIp(ip: String) {
-        _uiState.update { it.copy(wifiIp = ip) }
-    }
-
-    fun updateWifiPort(port: String) {
-        _uiState.update { it.copy(wifiPort = port) }
-    }
+    fun updateWifiIp(ip: String) { _uiState.update { it.copy(wifiIp = ip) } }
+    fun updateWifiPort(port: String) { _uiState.update { it.copy(wifiPort = port) } }
 
     fun connectWifi() {
         isAutoReconnectEnabled = true
         wifiReconnectJob?.cancel()
-
         disconnectInternal()
         _uiState.update { it.copy(connectionMode = ConnectionMode.WIFI, connectionState = ConnectionState.CONNECTING) }
 
@@ -282,9 +266,7 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
                 addAppLog(LogType.INFO, "၃ စက္ကန့်အတွင်း ပြန်လည်ချိတ်ဆက်ပါမည်...")
                 delay(3000)
                 if (isAutoReconnectEnabled) {
-                    withContext(Dispatchers.Main) {
-                        connectWifi()
-                    }
+                    withContext(Dispatchers.Main) { connectWifi() }
                 }
             }
         }
@@ -292,27 +274,28 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
 
     @SuppressLint("MissingPermission")
     private fun disconnectInternal() {
+        isAutoReconnectEnabled = false
         stopShortCircuitBeep()
         webSocket?.cancel()
         webSocket = null
 
-        try {
-            bleScanCallback?.let { bleScanner?.stopScan(it) }
-        } catch (e: Exception) {}
-
-        if (bluetoothGatt != null) {
-            try {
-                bluetoothGatt?.disconnect()
-                bluetoothGatt?.close()
-            } catch (e: Exception) {}
-            bluetoothGatt = null
+        bleScanCallback?.let {
+            try { bleScanner?.stopScan(it) } catch (_: Exception) {}
         }
+        bleScanCallback = null
+
+        bluetoothGatt?.let {
+            try { it.disconnect(); it.close() } catch (_: Exception) {}
+        }
+        bluetoothGatt = null
+        writeCharacteristic = null
     }
 
     @SuppressLint("MissingPermission")
     fun connectBle() {
-        disconnect()
+        disconnectInternal()
         _uiState.update { it.copy(connectionMode = ConnectionMode.BLE, connectionState = ConnectionState.CONNECTING) }
+
         val bluetoothManager = getApplication<Application>().getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
         bluetoothAdapter = bluetoothManager.adapter
 
@@ -332,10 +315,12 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
         addAppLog(LogType.INFO, "Mobile_Tool_ESP32 ကို ရှာဖွေနေသည်...")
 
         bleScanCallback = object : ScanCallback() {
+            @SuppressLint("MissingPermission")
             override fun onScanResult(callbackType: Int, result: ScanResult) {
                 val name = result.device.name ?: result.scanRecord?.deviceName
                 if (name == "Mobile_Tool_ESP32") {
-                    try { bleScanCallback?.let { bleScanner?.stopScan(it) } } catch (e: Exception) {}
+                    bleScanCallback?.let { try { bleScanner?.stopScan(it) } catch (_: Exception) {} }
+                    bleScanCallback = null
                     addAppLog(LogType.INFO, "ESP32 ကိုတွေ့ရှိပါသည်၊ ချိတ်ဆက်နေပါသည်...")
                     bluetoothGatt = result.device.connectGatt(getApplication(), false, gattCallback)
                 }
@@ -343,6 +328,7 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
             override fun onScanFailed(errorCode: Int) {
                 addAppLog(LogType.INFO, "ရှာဖွေမှု မအောင်မြင်ပါ: $errorCode")
                 _uiState.update { it.copy(connectionState = ConnectionState.DISCONNECTED) }
+                bleScanCallback = null
             }
         }
 
@@ -351,22 +337,16 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
         } catch (e: Exception) {
             addAppLog(LogType.INFO, "ရှာဖွေမှု စတင်၍မရပါ")
             _uiState.update { it.copy(connectionState = ConnectionState.DISCONNECTED) }
+            bleScanCallback = null
         }
 
         viewModelScope.launch {
             delay(10000)
             if (_uiState.value.connectionState != ConnectionState.CONNECTED) {
-                try { bleScanCallback?.let { bleScanner?.stopScan(it) } } catch (e: Exception) {}
-                
-                // Fix 3: Force Disconnect if BLE hangs
-                if (bluetoothGatt != null) {
-                    try {
-                        bluetoothGatt?.disconnect()
-                        bluetoothGatt?.close()
-                    } catch (e: Exception) {}
-                    bluetoothGatt = null
-                }
-                
+                bleScanCallback?.let { try { bleScanner?.stopScan(it) } catch (_: Exception) {} }
+                bleScanCallback = null
+                bluetoothGatt?.let { try { it.disconnect(); it.close() } catch (_: Exception) {} }
+                bluetoothGatt = null
                 addAppLog(LogType.INFO, "ရှာဖွေချိန် ကုန်ဆုံးသွားပါပြီ (သို့) ချိတ်ဆက်မှု မအောင်မြင်ပါ")
                 _uiState.update { it.copy(connectionState = ConnectionState.DISCONNECTED) }
             }
@@ -432,42 +412,35 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
                 addUartLog(json.optString("log", text))
                 return
             }
-
-            if (type != "live_probe") {
-                addAppLog(LogType.RES, text)
-            }
+            if (type != "live_probe") addAppLog(LogType.RES, text)
 
             when (type) {
                 "live_probe" -> {
-                    val valueStr = json.optString("value", "0.00")
-                    
-                    // Fix 1: Pass to updateLiveDiode to trigger Smart Auto-Record logic properly
+                    val valueStr = json.optString("value", "OL")
                     updateLiveDiode(valueStr)
-                    
-                    val valueFloat = valueStr.toFloatOrNull() ?: 0f
-                    // Check for short circuit beep trigger (< 0.05V)
-                    checkShortCircuitBeep(valueFloat)
+                    val isOL = valueStr == "OL"
+                    val valueFloat = if (!isOL) valueStr.toFloatOrNull() else null
 
-                    _uiState.update { state ->
-                        val newHistory = (state.probeHistory + valueFloat).takeLast(50)
-                        state.copy(probeHistory = newHistory)
+                    if (valueFloat != null) {
+                        checkShortCircuitBeep(valueFloat)
+                        _uiState.update { state ->
+                            val newHistory = (state.probeHistory + valueFloat).takeLast(50)
+                            state.copy(probeHistory = newHistory)
+                        }
                     }
                 }
                 "diode" -> {
                     val valueStr = json.optString("value", "--")
-                    val valueFloat = valueStr.toFloatOrNull()
-                    if (valueFloat != null) {
-                        checkShortCircuitBeep(valueFloat)
-                    }
+                    val isOL = valueStr == "OL"
+                    val valueFloat = if (!isOL) valueStr.toFloatOrNull() else null
+                    if (valueFloat != null) checkShortCircuitBeep(valueFloat)
                     _uiState.update { it.copy(diodeValue = valueStr) }
                 }
                 "i2c" -> {
                     val devicesArray = json.optJSONArray("devices")
                     val devices = mutableListOf<String>()
                     if (devicesArray != null) {
-                        for (i in 0 until devicesArray.length()) {
-                            devices.add(devicesArray.getString(i))
-                        }
+                        for (i in 0 until devicesArray.length()) devices.add(devicesArray.getString(i))
                     }
                     _uiState.update { it.copy(i2cDevices = devices) }
                 }
@@ -477,14 +450,12 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
                 }
             }
         } catch (e: Exception) {
-            // Raw text log
             addUartLog(text)
         }
     }
 
-    // Trigger audio beep when diode/live_probe voltage drops below 0.05V (SHORT circuit)
     private fun checkShortCircuitBeep(voltage: Float) {
-        if (_uiState.value.hardwareMode == HardwareMode.DIODE && voltage in 0.0001f..0.0499f) {
+        if (_uiState.value.hardwareMode == HardwareMode.DIODE && voltage > 0f && voltage < 0.05f) {
             if (!isBeeping) {
                 isBeeping = true
                 beepJob?.cancel()
@@ -504,6 +475,7 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
         isBeeping = false
         beepJob?.cancel()
         beepJob = null
+        toneGenerator?.stopTone()
     }
 
     @SuppressLint("MissingPermission")
@@ -513,7 +485,6 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
             addAppLog(LogType.INFO, "ချိတ်ဆက်မထားပါ။ ကွန်မန်း ပို့၍မရပါ။")
             return
         }
-
         addAppLog(LogType.CMD, cmd)
         if (state.connectionMode == ConnectionMode.WIFI) {
             webSocket?.send(cmd)
@@ -528,15 +499,8 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
 
     fun sendDiode() = sendMessage("{\"cmd\": \"diode\"}")
     fun sendI2c() = sendMessage("{\"cmd\": \"i2c\"}")
-
-    fun setUartBaudRate(baud: Int) {
-        _uiState.update { it.copy(uartBaudRate = baud) }
-    }
-
-    fun setDiodeReferenceValue(ref: Float) {
-        _uiState.update { it.copy(diodeReferenceValue = ref) }
-    }
-
+    fun setUartBaudRate(baud: Int) { _uiState.update { it.copy(uartBaudRate = baud) } }
+    fun setDiodeReferenceValue(ref: Float) { _uiState.update { it.copy(diodeReferenceValue = ref) } }
     fun sendUartStart() = sendMessage("{\"cmd\": \"uart_start\", \"baud\": ${_uiState.value.uartBaudRate}}")
     fun sendUartStop() = sendMessage("{\"cmd\": \"uart_stop\"}")
 
@@ -548,42 +512,45 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
     fun setSmartRecordMode(mode: SmartRecordMode) {
         _uiState.update { it.copy(smartRecordMode = mode) }
     }
-    
+
     fun toggleSmartRecording() {
-        _uiState.update { 
+        _uiState.update {
             if (it.isRecordingStarted) {
                 it.copy(isRecordingStarted = false)
             } else {
-                // reset if starting fresh
                 it.copy(
-                    isRecordingStarted = true, 
+                    isRecordingStarted = true,
                     currentPinIndex = 0,
                     pinRecords = it.pinRecords.map { p -> p.copy(measuredValue = null, status = PinStatus.PENDING) }
                 )
             }
         }
     }
-    
+
     fun recordCurrentPin(measured: Float) {
         val state = _uiState.value
         if (!state.isRecordingStarted || state.currentPinIndex >= state.pinRecords.size) return
-        
-        val record = state.pinRecords[state.currentPinIndex]
-        val diff = Math.abs(record.referenceValue - measured)
+
+        val idx = state.currentPinIndex
+        val record = state.pinRecords[idx]
+        val diff = kotlin.math.abs(record.referenceValue - measured)
         val status = when {
             measured < 0.05f -> PinStatus.SHORT
             diff <= 0.05f -> PinStatus.PASS
             else -> PinStatus.FAIL
         }
-        
+
         val newList = state.pinRecords.toMutableList()
-        newList[state.currentPinIndex] = record.copy(measuredValue = measured, status = status)
-        
-        _uiState.update { 
+        newList[idx] = record.copy(measuredValue = measured, status = status)
+
+        val nextIndex = idx + 1
+        val done = nextIndex >= state.pinRecords.size
+
+        _uiState.update {
             it.copy(
                 pinRecords = newList,
-                currentPinIndex = if (it.currentPinIndex < it.pinRecords.size - 1) it.currentPinIndex + 1 else it.currentPinIndex,
-                isRecordingStarted = it.currentPinIndex < it.pinRecords.size - 1
+                currentPinIndex = if (!done) nextIndex else idx,
+                isRecordingStarted = !done
             )
         }
     }
@@ -594,28 +561,29 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
 
     fun updateLiveDiode(value: String) {
         _uiState.update { it.copy(liveProbeValue = value) }
-        val floatVal = value.toFloatOrNull()
-        val isOL = value == "OL" || (floatVal != null && floatVal > 2.5f)
-        
+
+        val isOL = value == "OL"
+        val floatVal = if (!isOL) value.toFloatOrNull() else null
+
         if (isOL) {
-            isProbeArmed = true // Probe lifted, re-arm for next pin
+            isProbeArmed = true
             consecutiveValidReadings = 0
+            return
         }
-        
+
         val state = _uiState.value
-        if (state.isRecordingStarted && state.smartRecordMode == SmartRecordMode.AUTO && floatVal != null && !isOL) {
+        if (state.isRecordingStarted && state.smartRecordMode == SmartRecordMode.AUTO && floatVal != null) {
             if (isProbeArmed) {
-                if (Math.abs(floatVal - lastValidValue) < 0.02f) {
+                if (kotlin.math.abs(floatVal - lastValidValue) < 0.02f) {
                     consecutiveValidReadings++
                 } else {
                     consecutiveValidReadings = 1
                     lastValidValue = floatVal
                 }
-                
-                // Wait for 3 consecutive stable readings
+
                 if (consecutiveValidReadings >= 3) {
                     recordCurrentPin(lastValidValue)
-                    isProbeArmed = false // Wait for OL to re-arm
+                    isProbeArmed = false
                     consecutiveValidReadings = 0
                 }
             }
@@ -638,16 +606,11 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
     fun setActiveTab(index: Int) {
         _uiState.update { it.copy(activeTab = index) }
         when (index) {
-            // Fix 2: Both Tools (0) and Smart (1) share Diode/selected tool modes. 
             0, 1 -> {
-                val currentTool = _uiState.value.hardwareMode
-                if (currentTool == HardwareMode.CLOCK) {
-                    setHardwareMode(HardwareMode.DIODE)
-                } else {
-                    setHardwareMode(currentTool)
-                }
+                val current = _uiState.value.hardwareMode
+                if (current == HardwareMode.CLOCK) setHardwareMode(HardwareMode.DIODE)
             }
-            3 -> setHardwareMode(HardwareMode.CLOCK) // Only index 3 is Clock Mode
+            3 -> setHardwareMode(HardwareMode.CLOCK)
         }
     }
 
@@ -667,9 +630,7 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
                 addAppLog(LogType.INFO, "USB ခွင့်ပြုချက် တောင်းခံနေပါသည်...")
                 val intent = Intent(ACTION_USB_PERMISSION)
                 val pendingIntent = PendingIntent.getBroadcast(
-                    getApplication(),
-                    0,
-                    intent,
+                    getApplication(), 0, intent,
                     PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
                 )
                 usbManager.requestPermission(device, pendingIntent)
@@ -727,19 +688,13 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
                     addAppLog(LogType.INFO, "ESP32 ကို Bootloader Mode သို့ ပြောင်းနေပါသည် (RTS/DTR)...")
                 }
 
-                port.dtr = false
-                port.rts = true
-                Thread.sleep(100)
-                port.dtr = true
-                port.rts = false
-                Thread.sleep(100)
-                port.dtr = false
-                port.rts = false
+                port.dtr = false; port.rts = true; Thread.sleep(100)
+                port.dtr = true; port.rts = false; Thread.sleep(100)
+                port.dtr = false; port.rts = false
 
                 withContext(Dispatchers.Main) {
                     addAppLog(LogType.INFO, "Bootloader သို့ ဝင်ရောက်သွားပါပြီ။")
-                    addAppLog(LogType.INFO, "မှတ်ချက် - အပြည့်အစုံ ဖန်းဝဲတင်ရန်အတွက် esptool protocol အပြည့်အစုံရေးသားရန် လိုအပ်ပါသည်။")
-
+                    addAppLog(LogType.INFO, "မှတ်ချက် - အပြည့်အစုံ ဖန်းဝဲတင်ရန် esptool protocol အပြည့်အစုံလိုအပ်ပါသည်။")
                     port.close()
                     _uiState.update { it.copy(isFlashing = false, flashProgress = 1.0f) }
                 }
@@ -752,7 +707,6 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    @SuppressLint("MissingPermission")
     fun disconnect() {
         isAutoReconnectEnabled = false
         wifiReconnectJob?.cancel()
@@ -761,24 +715,12 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
         addAppLog(LogType.INFO, "ချိတ်ဆက်မှု ဖြတ်တောက်လိုက်ပါပြီ")
     }
 
-    @SuppressLint("MissingPermission")
     override fun onCleared() {
         super.onCleared()
         stopShortCircuitBeep()
-        try {
-            toneGenerator?.release()
-            toneGenerator = null
-        } catch (e: Exception) {}
+        try { toneGenerator?.release(); toneGenerator = null } catch (_: Exception) {}
         disconnect()
-        try {
-            bleScanCallback?.let { bleScanner?.stopScan(it) }
-        } catch (e: Exception) {}
-        
-        // Clean up USB Receiver
-        try {
-            getApplication<Application>().unregisterReceiver(usbReceiver)
-        } catch (e: Exception) {}
-        
+        try { getApplication<Application>().unregisterReceiver(usbReceiver) } catch (_: Exception) {}
         client.dispatcher.executorService.shutdown()
         client.connectionPool.evictAll()
         client.cache?.close()
