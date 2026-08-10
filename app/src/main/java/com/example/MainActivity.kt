@@ -24,7 +24,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         
-        // Fix: Added logic to handle permission results
         val requestPermissionLauncher = registerForActivityResult(
             ActivityResultContracts.RequestMultiplePermissions()
         ) { permissions ->
@@ -32,7 +31,7 @@ class MainActivity : ComponentActivity() {
             if (!allGranted) {
                 Toast.makeText(
                     this,
-                    "Hardware များနှင့် ချိတ်ဆက်ရန် Bluetooth နှင့် Location ခွင့်ပြုချက်များ မဖြစ်မနေ လိုအပ်ပါသည်။",
+                    "Hardware များနှင့် ချိတ်ဆက်ရန် Bluetooth နှင့် Location ခွင့်ပြုချက်များ လိုအပ်ပါသည်။",
                     Toast.LENGTH_LONG
                 ).show()
             }
@@ -54,13 +53,18 @@ class MainActivity : ComponentActivity() {
             )
         }
 
-        requestPermissionLauncher.launch(requiredPermissions)
-
+        // ✅ DiagnosticScreen လိုအပ်တဲ့ onRequestBluetoothPermission ထည့်ပေးလိုက်ပြီ
         setContent {
             val uiState by viewModel.uiState.collectAsState()
             MyApplicationTheme(darkTheme = uiState.isDarkTheme) {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    DiagnosticScreen(viewModel, modifier = Modifier.padding(innerPadding))
+                    DiagnosticScreen(
+                        viewModel = viewModel,
+                        modifier = Modifier.padding(innerPadding),
+                        onRequestBluetoothPermission = {
+                            requestPermissionLauncher.launch(requiredPermissions)
+                        }
+                    )
                 }
             }
         }
