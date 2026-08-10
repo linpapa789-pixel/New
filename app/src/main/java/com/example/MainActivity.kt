@@ -3,6 +3,7 @@ package com.example
 import android.Manifest
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -23,9 +24,19 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         
+        // Fix: Added logic to handle permission results
         val requestPermissionLauncher = registerForActivityResult(
             ActivityResultContracts.RequestMultiplePermissions()
-        ) {}
+        ) { permissions ->
+            val allGranted = permissions.entries.all { it.value }
+            if (!allGranted) {
+                Toast.makeText(
+                    this,
+                    "Hardware များနှင့် ချိတ်ဆက်ရန် Bluetooth နှင့် Location ခွင့်ပြုချက်များ မဖြစ်မနေ လိုအပ်ပါသည်။",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
 
         val requiredPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             arrayOf(
