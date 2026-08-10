@@ -135,7 +135,6 @@ class DiagnosticViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     init {
         try {
             toneGenerator = ToneGenerator(AudioManager.STREAM_MUSIC, 80)
