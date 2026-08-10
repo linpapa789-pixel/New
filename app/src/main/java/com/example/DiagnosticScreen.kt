@@ -1,628 +1,635 @@
 package com.example
 
-import android.content.Context
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.outlined.Build
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.*
+import androidx.compose.ui.graphics.*
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun DiagnosticScreen(viewModel: DiagnosticViewModel, modifier: Modifier = Modifier) {
-    val uiState by viewModel.uiState.collectAsState()
-
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        topBar = {
-            // Compact HUD
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surface)
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "SYS_DIAG_v1",
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontSize = 14.sp
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        "[${uiState.hardwareMode.name}]",
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp
-                    )
-                }
-                ConnectionBadge(uiState = uiState)
-            }
-        },
-        bottomBar = {
-            // Minimal Icon-only Tab Row
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.background)
-                    .padding(vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val tabs = listOf(
-                    Triple("Tools", Icons.Outlined.Build, Icons.Filled.Build),
-                    Triple("Smart", Icons.Outlined.CheckCircle, Icons.Filled.CheckCircle),
-                    Triple("Guide", Icons.Outlined.Info, Icons.Filled.Info),
-                    Triple("Clock", Icons.Outlined.Refresh, Icons.Filled.Refresh),
-                    Triple("Flash", Icons.Outlined.CheckCircle, Icons.Filled.CheckCircle),
-                    Triple("Status", Icons.Outlined.Info, Icons.Filled.Info),
-                    Triple("Settings", Icons.Outlined.Settings, Icons.Filled.Settings)
-                )
-                tabs.forEachIndexed { index, (title, unselectedIcon, selectedIcon) ->
-                    val isSelected = uiState.activeTab == index
-                    val iconColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-
-                    Icon(
-                        imageVector = if (isSelected) selectedIcon else unselectedIcon,
-                        contentDescription = title,
-                        tint = iconColor,
-                        modifier = Modifier
-                            .size(28.dp)
-                            .clickable { viewModel.setActiveTab(index) }
-                    )
-                }
-            }
-        },
-        containerColor = MaterialTheme.colorScheme.background
-    ) { innerPadding ->
-        Crossfade(
-            targetState = uiState.activeTab,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .background(MaterialTheme.colorScheme.background),
-            animationSpec = tween(300)
-        ) { tab ->
-            when (tab) {
-                0 -> ToolsView(viewModel, uiState)
-                1 -> SmartRecordView(viewModel, uiState)
-                2 -> GuideView()
-                3 -> ClockCheckView(viewModel, uiState)
-                4 -> OtgFlashView(viewModel, uiState)
-                5 -> StatusLogsView(viewModel, uiState)
-                6 -> ConfigView(viewModel, uiState)
-            }
-        }
-    }
-}
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.*
+import androidx.compose.ui.Alignment
+import kotlinx.coroutines.delay
 
 @Composable
-fun ConnectionBadge(uiState: DiagnosticUiState) {
-    val (statusColor, statusText) = when (uiState.connectionState) {
-        ConnectionState.CONNECTED -> MaterialTheme.colorScheme.secondary to "LINK_ACT"
-        ConnectionState.CONNECTING -> Color(0xFFFBBF24) to "SYNCING"
-        ConnectionState.DISCONNECTED -> MaterialTheme.colorScheme.error to "OFFLINE"
+fun DiagnosticScreen(
+    viewModel: DiagnosticViewModel,
+    onRequestBluetoothPermission: () -> Unit
+) {
+    val state by viewModel.uiState.collectAsState()
+
+    LaunchedEffect(Unit) {
+        onRequestBluetoothPermission()
     }
 
-    Row(
-        modifier = Modifier
-            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(6.dp)
-                .clip(CircleShape)
-                .background(statusColor)
+    MaterialTheme(
+        colorScheme = if (state.isDarkTheme) darkColorScheme(
+            primary = Color(0xFF4CAF50),
+            onPrimary = Color.White,
+            secondary = Color(0xFF2196F3),
+            background = Color(0xFF121212),
+            onBackground = Color(0xFFE0E0E0),
+            surface = Color(0xFF1E1E1E),
+            onSurface = Color(0xFFE0E0E0),
+        ) else lightColorScheme(
+            primary = Color(0xFF2E7D32),
+            onPrimary = Color.White,
+            secondary = Color(0xFF1976D2),
+            background = Color(0xFFFAFAFA),
+            onBackground = Color(0xFF212121),
+            surface = Color.White,
+            onSurface = Color(0xFF212121),
         )
-        Spacer(Modifier.width(6.dp))
-        Text(
-            text = statusText,
-            fontSize = 10.sp,
-            fontFamily = FontFamily.Monospace,
-            color = statusColor
-        )
-    }
-}
-
-@Composable
-fun ToolsView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // --- 1. Mode Selection UI (Terminal Style) ---
-        item {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            containerColor = MaterialTheme.colorScheme.background,
+            topBar = { TopAppBar(state, viewModel) },
+            bottomBar = { BottomNavigationBar(state, viewModel) }
+        ) { innerPadding ->
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
-                    .background(MaterialTheme.colorScheme.surface)
-                    .padding(12.dp)
+                    .fillMaxSize()
+                    .padding(innerPadding)
             ) {
-                Column {
-                    Text("SELECT_PROBE_MODE", fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
-                    Spacer(Modifier.height(12.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        val modes = listOf(
-                            Triple(HardwareMode.DIODE, "DIODE", "⚡"),
-                            Triple(HardwareMode.UART, "UART", "📟"),
-                            Triple(HardwareMode.I2C, "I2C", "🔎"),
-                            Triple(HardwareMode.PWM, "PWM", "〰")
-                        )
-
-                        modes.forEach { (mode, label, icon) ->
-                            val isSelected = uiState.hardwareMode == mode
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(horizontal = 4.dp)
-                                    .height(36.dp)
-                                    .border(1.dp, if(isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
-                                    .background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent)
-                                    .clickable { viewModel.setHardwareMode(mode) },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(icon, fontSize = 12.sp)
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(
-                                        label,
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 12.sp,
-                                        color = if(isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                    }
+                when (state.activeTab) {
+                    0 -> ToolsTab(state, viewModel)
+                    1 -> SmartRecordTab(state, viewModel)
+                    2 -> ClockTab(state)
+                    3 -> StatusTab(state, viewModel)
                 }
             }
-        }
-
-        // --- 2. Dynamic Data Display based on Hardware Mode ---
-        item {
-            Crossfade(targetState = uiState.hardwareMode, animationSpec = tween(300)) { currentMode ->
-                when (currentMode) {
-                    HardwareMode.DIODE -> DiodeModeView(viewModel, uiState)
-                    HardwareMode.UART -> UartModeView(viewModel, uiState)
-                    HardwareMode.I2C -> I2cModeView(viewModel, uiState)
-                    HardwareMode.CLOCK -> { /* Handled in Clock tab */ }
-                    HardwareMode.PWM -> PwmModeView(viewModel, uiState)
-                }
-            }
-        }
-
-        // Connection section at the bottom of tools view for quick access
-        item {
-            ConnectionCard(viewModel, uiState)
         }
     }
 }
 
 @Composable
-fun DiodeModeView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        // Live Scan Card (Terminal Style + Oscilloscope)
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
-                .background(MaterialTheme.colorScheme.surface)
-                .padding(16.dp)
+fun TopAppBar(state: DiagnosticUiState, viewModel: DiagnosticViewModel) {
+    TopAppBar(
+        title = {
+            Text(
+                "ESP32 Diagnostic Tool",
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp
+            )
+        },
+        actions = {
+            // Connection Status
+            val statusColor = when (state.connectionState) {
+                ConnectionState.CONNECTED -> Color(0xFF4CAF50)
+                ConnectionState.CONNECTING -> Color(0xFFFFC107)
+                ConnectionState.DISCONNECTED -> Color(0xFFF44336)
+            }
+            val statusText = when (state.connectionState) {
+                ConnectionState.CONNECTED -> "ချိတ်ဆက်ပြီး"
+                ConnectionState.CONNECTING -> "ချိတ်ဆက်နေဆဲ"
+                ConnectionState.DISCONNECTED -> "ဖြတ်ထား"
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(end = 8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(10.dp)
+                        .background(statusColor, CircleShape)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(statusText, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+
+            // Theme Toggle
+            IconButton(onClick = { viewModel.toggleTheme() }) {
+                Icon(
+                    if (state.isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
+                    contentDescription = "အပြင်အဆင်ပြောင်း"
+                )
+            }
+
+            // Overflow Menu
+            var showMenu by remember { mutableStateOf(false) }
+            IconButton(onClick = { showMenu = true }) {
+                Icon(Icons.Default.MoreVert, contentDescription = "အခြားရွေးချယ်စရာ")
+            }
+            DropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text("USB / ဖန်းဝဲတင်ခြင်း") },
+                    onClick = { viewModel.setActiveTab(4); showMenu = false }
+                )
+                DropdownMenuItem(
+                    text = { Text("အကူအညီ / လမ်းညွှန်") },
+                    onClick = { viewModel.setActiveTab(5); showMenu = false }
+                )
+                DropdownMenuItem(
+                    text = { Text("မှတ်တမ်းရှင်းမည်") },
+                    onClick = { viewModel.clearLogs(); showMenu = false }
+                )
+            }
+        }
+    )
+}
+
+@Composable
+fun BottomNavigationBar(state: DiagnosticUiState, viewModel: DiagnosticViewModel) {
+    NavigationBar {
+        val items = listOf(
+            0 to "ကိရိယာ" to Icons.Default.Build,
+            1 to "မှတ်တမ်း" to Icons.Default.ListAlt,
+            2 to "နာရီကြိမ်နှုန်း" to Icons.Default.Timer,
+            3 to "အခြေအနေ" to Icons.Default.Info
+        )
+        items.forEach { (pair, icon) ->
+            val (index, label) = pair
+            NavigationBarItem(
+                selected = state.activeTab == index,
+                onClick = { viewModel.setActiveTab(index) },
+                icon = { Icon(icon, contentDescription = label) },
+                label = { Text(label, fontSize = 12.sp) }
+            )
+        }
+    }
+}
+
+// ========== TAB 0 — TOOLS ==========
+
+@Composable
+fun ToolsTab(state: DiagnosticUiState, viewModel: DiagnosticViewModel) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Connection Panel
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
         ) {
-            Column {
+            Column(Modifier.padding(16.dp)) {
+                Text("ချိတ်ဆက်မှု", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(12.dp))
+
+                if (state.connectionMode != ConnectionMode.BLE) {
+                    OutlinedTextField(
+                        value = state.wifiIp,
+                        onValueChange = { viewModel.updateWifiIp(it) },
+                        label = { Text("IP လိပ်စာ") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = state.wifiPort,
+                        onValueChange = { viewModel.updateWifiPort(it) },
+                        label = { Text("Port") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Spacer(Modifier.height(12.dp))
+                }
+
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { viewModel.connectWifi() },
+                        enabled = state.connectionState != ConnectionState.CONNECTING,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.Wifi, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Wi-Fi ချိတ်ဆက်")
+                    }
+                    Button(
+                        onClick = { viewModel.connectBle() },
+                        enabled = state.connectionState != ConnectionState.CONNECTING,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.Bluetooth, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("ဘလူးတုသ်")
+                    }
+                }
+                Button(
+                    onClick = { viewModel.disconnect() },
+                    enabled = state.connectionState == ConnectionState.CONNECTED,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB71C1C))
+                ) {
+                    Text("ချိတ်ဆက်မှုဖြတ်ရန်")
+                }
+            }
+        }
+
+        // Mode Selector
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
+                Text("စမ်းသပ်မှု အမျိုးအစား", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(12.dp))
+                val modes = listOf(
+                    HardwareMode.DIODE to "Diode တိုင်းတာခြင်း",
+                    HardwareMode.UART to "UART ဒေတာဖတ်ခြင်း",
+                    HardwareMode.I2C to "I2C စကင်ဖတ်ခြင်း",
+                    HardwareMode.PWM to "PWM အချက်ပြမှု"
+                )
+                modes.forEach { (mode, label) ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.setHardwareMode(mode) }
+                            .padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = state.hardwareMode == mode,
+                            onClick = { viewModel.setHardwareMode(mode) }
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(label, style = MaterialTheme.typography.bodyLarge)
+                    }
+                }
+            }
+        }
+
+        // === DIODE MODE ===
+        if (state.hardwareMode == HardwareMode.DIODE) {
+            DiodePanel(state, viewModel)
+        }
+
+        // === UART MODE ===
+        if (state.hardwareMode == HardwareMode.UART) {
+            UartPanel(state, viewModel)
+        }
+
+        // === I2C MODE ===
+        if (state.hardwareMode == HardwareMode.I2C) {
+            I2CPanel(state, viewModel)
+        }
+
+        // === PWM MODE ===
+        if (state.hardwareMode == HardwareMode.PWM) {
+            PwmPanel(state, viewModel)
+        }
+    }
+}
+
+@Composable
+fun DiodePanel(state: DiagnosticUiState, viewModel: DiagnosticViewModel) {
+    val displayValue = state.diodeValue
+    val isOL = displayValue == "OL"
+    val floatVal = if (!isOL) displayValue.toFloatOrNull() else null
+
+    val valueColor = when {
+        isOL -> Color(0xFF2196F3)
+        floatVal != null && floatVal < 0.05f -> Color(0xFFF44336)
+        floatVal != null && floatVal > state.diodeReferenceValue + 0.05f -> Color(0xFFFF9800)
+        floatVal != null && floatVal >= state.diodeReferenceValue - 0.05f -> Color(0xFF4CAF50)
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    val bgAlpha = if (floatVal != null && floatVal < 0.05f) 0.15f else 0.05f
+    val bgColor = valueColor.copy(alpha = bgAlpha)
+
+    Card(
+        Modifier.fillMaxWidth(),
+        border = Border(2.dp, valueColor.copy(alpha = 0.7f), RoundedCornerShape(16.dp))
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(bgColor)
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                "Diode တန်ဖိုး",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(12.dp))
+            Text(
+                displayValue,
+                style = MaterialTheme.typography.displayLarge,
+                fontSize = 52.sp,
+                fontWeight = FontWeight.Bold,
+                color = valueColor
+            )
+            Text(
+                "Volt",
+                style = MaterialTheme.typography.bodyLarge,
+                color = valueColor.copy(alpha = 0.8f),
+                modifier = Modifier.padding(top = 4.dp)
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            // Reference
+            Text(
+                "ရည်ညွှန်းတန်ဖိုး: %.3f V".format(state.diodeReferenceValue),
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Slider(
+                value = state.diodeReferenceValue,
+                onValueChange = { viewModel.setDiodeReferenceValue(it) },
+                valueRange = 0.1f..0.8f,
+                steps = 69,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            Button(
+                onClick = { viewModel.sendDiode() },
+                enabled = state.connectionState == ConnectionState.CONNECTED,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Default.Refresh, null, Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("တိုင်းတာရန် နှိပ်ပါ", fontSize = 16.sp)
+            }
+        }
+    }
+}
+
+@Composable
+fun UartPanel(state: DiagnosticUiState, viewModel: DiagnosticViewModel) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text("UART ဒေတာ", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { viewModel.sendUartStart() },
+                    enabled = state.connectionState == ConnectionState.CONNECTED,
+                    modifier = Modifier.weight(1f)
+                ) { Text("စတင်ဖတ်ရန်") }
+                Button(
+                    onClick = { viewModel.sendUartStop() },
+                    enabled = state.connectionState == ConnectionState.CONNECTED,
+                    modifier = Modifier.weight(1f)
+                ) { Text("ရပ်ရန်") }
+                Button(
+                    onClick = { viewModel.toggleUartPause() },
+                    modifier = Modifier.weight(1f)
+                ) { Text(if (state.isUartPaused) "ဆက်လက်ဖတ်ရန်" else "ခေတ္တရပ်ရန်") }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // Baud Rate
+            Text("Baud Rate: ${state.uartBaudRate}", style = MaterialTheme.typography.bodyMedium)
+            val baudList = listOf(9600, 19200, 38400, 57600, 115200)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                baudList.forEach { b ->
+                    FilterChip(
+                        selected = state.uartBaudRate == b,
+                        onClick = { viewModel.setUartBaudRate(b) },
+                        label = { Text(b.toString()) }
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // Log Box
+            Card(
+                Modifier
+                    .fillMaxWidth()
+                    .height(220.dp)
+                    .padding(vertical = 8.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+                )
+            ) {
+                Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) {
+                    if (state.uartLogs.isEmpty()) {
+                        Text(
+                            "ဒေတာမရသေးပါ။ စတင်ဖတ်ရန် ခလုတ်ကိုနှိပ်ပါ။",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 14.sp
+                        )
+                    } else {
+                        state.uartLogs.forEach { log ->
+                            Text(
+                                "[${log.time}] ${log.message}",
+                                fontSize = 13.sp,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                modifier = Modifier.padding(vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun I2CPanel(state: DiagnosticUiState, viewModel: DiagnosticViewModel) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text("I2C စကင်ဖတ်ခြင်း", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(12.dp))
+            Button(
+                onClick = { viewModel.sendI2c() },
+                enabled = state.connectionState == ConnectionState.CONNECTED,
+                modifier = Modifier.fillMaxWidth().height(52.dp)
+            ) {
+                Icon(Icons.Default.Search, null)
+                Spacer(Modifier.width(8.dp))
+                Text("စကင်ဖတ်စတင်ရန်")
+            }
+            Spacer(Modifier.height(16.dp))
+            Text(
+                if (state.i2cDevices.isEmpty()) "စက်ပစ္စည်းမတွေ့ရှိသေးပါ"
+                else "တွေ့ရှိခဲ့သော စက်များ-",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(Modifier.height(8.dp))
+            state.i2cDevices.forEach { addr ->
+                Card(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                ) {
+                    Text(
+                        "  • လိပ်စာ: $addr",
+                        modifier = Modifier.padding(12.dp),
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PwmPanel(state: DiagnosticUiState, viewModel: DiagnosticViewModel) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text("PWM အချက်ပြမှု", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(12.dp))
+
+            Text("ကြိမ်နှုန်း: ${state.pwmFreq} Hz", style = MaterialTheme.typography.bodyLarge)
+            Slider(
+                value = state.pwmFreq.toFloat(),
+                onValueChange = { },
+                onValueChangeFinished = { viewModel.sendPwmConfig(state.pwmFreq, state.pwmDuty) },
+                valueRange = 50f..5000f,
+                steps = 98,
+                modifier = Modifier.padding(horizontal = 8.dp)
+            )
+
+            Text("အလုပ်ချိန်ရာခိုင်နှုန်း: ${state.pwmDuty} %", style = MaterialTheme.typography.bodyLarge)
+            Slider(
+                value = state.pwmDuty.toFloat(),
+                onValueChange = { },
+                onValueChangeFinished = { viewModel.sendPwmConfig(state.pwmFreq, state.pwmDuty) },
+                valueRange = 0f..100f,
+                steps = 19,
+                modifier = Modifier.padding(horizontal = 8.dp)
+            )
+
+            Button(
+                onClick = { viewModel.sendPwmConfig(state.pwmFreq, state.pwmDuty) },
+                enabled = state.connectionState == ConnectionState.CONNECTED,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+            ) {
+                Text("ဆက်တင်များပေးပို့ရန်")
+            }
+        }
+    }
+}
+
+// ========== TAB 1 — SMART RECORD ==========
+
+@Composable
+fun SmartRecordTab(state: DiagnosticUiState, viewModel: DiagnosticViewModel) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
+                Text("Smart Pin မှတ်တမ်း", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(12.dp))
+
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { viewModel.setSmartRecordMode(SmartRecordMode.MANUAL) },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (state.smartRecordMode == SmartRecordMode.MANUAL)
+                                MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    ) { Text("ကိုယ်တိုင်") }
+                    Button(
+                        onClick = { viewModel.setSmartRecordMode(SmartRecordMode.AUTO) },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (state.smartRecordMode == SmartRecordMode.AUTO)
+                                MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    ) { Text("အလိုအလျောက်") }
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                Button(
+                    onClick = { viewModel.toggleSmartRecording() },
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (state.isRecordingStarted) Color(0xFFB71C1C)
+                        else Color(0xFF2E7D32)
+                    )
+                ) {
+                    Text(if (state.isRecordingStarted) "မှတ်တမ်းရပ်တန့်ရန်" else "မှတ်တမ်းစတင်ရန်", fontSize = 16.sp)
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                // Summary
+                val total = state.pinRecords.size
+                val pass = state.pinRecords.count { it.status == PinStatus.PASS }
+                val fail = state.pinRecords.count { it.status == PinStatus.FAIL }
+                val short = state.pinRecords.count { it.status == PinStatus.SHORT }
+
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
+                    StatItem("$total", "စုစုပေါင်း")
+                    StatItem("$pass", "အဆင်ပြေ", Color(0xFF4CAF50))
+                    StatItem("$fail", "မကိုက်ညီ", Color(0xFFFF9800))
+                    StatItem("$short", "ရှော့", Color(0xFFF44336))
+                }
+            }
+        }
+
+        // Pin Cards
+        state.pinRecords.forEachIndexed { idx, record ->
+            val cardBg = when (record.status) {
+                PinStatus.PASS -> Color(0xFF4CAF50).copy(alpha = 0.15f)
+                PinStatus.FAIL -> Color(0xFFFF9800).copy(alpha = 0.15f)
+                PinStatus.SHORT -> Color(0xFFF44336).copy(alpha = 0.15f)
+                PinStatus.PENDING -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+            }
+            val borderColor = when (record.status) {
+                PinStatus.PASS -> Color(0xFF4CAF50)
+                PinStatus.FAIL -> Color(0xFFFF9800)
+                PinStatus.SHORT -> Color(0xFFF44336)
+                PinStatus.PENDING -> Color.Transparent
+            }
+            val isCurrent = state.isRecordingStarted && idx == state.currentPinIndex
+
+            Card(
+                Modifier
+                    .fillMaxWidth()
+                    .then(if (isCurrent) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp)) else Modifier),
+                colors = CardDefaults.cardColors(containerColor = cardBg),
+                border = if (!isCurrent) Border(1.dp, borderColor.copy(alpha = 0.6f), RoundedCornerShape(12.dp)) else null
+            ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text("> LIVE_PROBE_READING", fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
-                        Spacer(Modifier.height(4.dp))
-                        Text("ZERO_LAG_ADC | OSCILLOSCOPE_MODE", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Row(verticalAlignment = Alignment.Bottom) {
                         Text(
-                            uiState.liveProbeValue,
-                            fontSize = 42.sp,
-                            fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.onSurface
+                            "Pin ${record.pinNumber} — ${record.name}",
+                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium
                         )
-                        if (uiState.liveProbeValue != "--" && uiState.liveProbeValue != "0.00") {
-                            Text("V", fontFamily = FontFamily.Monospace, fontSize = 20.sp, modifier = Modifier.padding(bottom = 6.dp, start = 4.dp), color = MaterialTheme.colorScheme.onSurface)
-                        }
+                        Text("ရည်ညွှန်း: %.3f V".format(record.referenceValue), fontSize = 13.sp)
                     }
-                }
-
-                Spacer(Modifier.height(16.dp))
-
-                // Real-Time Oscilloscope Graph (Optimized Canvas)
-                val graphColor = MaterialTheme.colorScheme.secondary
-                val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-                val history = uiState.probeHistory
-
-                Canvas(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(120.dp)
-                        .background(MaterialTheme.colorScheme.background, RoundedCornerShape(4.dp))
-                        .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
-                ) {
-                    // Draw terminal-style grid
-                    val gridLines = 5
-                    val stepX = size.width / gridLines
-                    val stepY = size.height / gridLines
-                    for (i in 1 until gridLines) {
-                        drawLine(
-                            color = gridColor,
-                            start = Offset(x = stepX * i, y = 0f),
-                            end = Offset(x = stepX * i, y = size.height),
-                            strokeWidth = 1f
-                        )
-                        drawLine(
-                            color = gridColor,
-                            start = Offset(x = 0f, y = stepY * i),
-                            end = Offset(x = size.width, y = stepY * i),
-                            strokeWidth = 1f
-                        )
-                    }
-
-                    // Draw glowing line graph
-                    if (history.isNotEmpty()) {
-                        val path = Path()
-                        val maxPoints = 50
-                        val pointSpacing = size.width / (maxPoints - 1)
-                        val maxValue = 3.3f
-
-                        history.forEachIndexed { index, value ->
-                            val x = index * pointSpacing
-                            val y = size.height - ((value.coerceIn(0f, maxValue) / maxValue) * size.height)
-                            if (index == 0) {
-                                path.moveTo(x, y)
-                            } else {
-                                path.lineTo(x, y)
-                            }
-                        }
-
-                        // Outer glow
-                        drawPath(
-                            path = path,
-                            color = graphColor.copy(alpha = 0.3f),
-                            style = Stroke(width = 6f)
-                        )
-                        // Core line
-                        drawPath(
-                            path = path,
-                            color = graphColor,
-                            style = Stroke(width = 2f)
-                        )
-                    }
-                }
-            }
-        }
-
-        // Diode Smart Comparison
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
-                .background(MaterialTheme.colorScheme.surface)
-                .padding(16.dp)
-        ) {
-            Column {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("> DIODE_REFERENCE_TEST", fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
-                    Button(
-                        onClick = { viewModel.sendDiode() },
-                        shape = RoundedCornerShape(4.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                        modifier = Modifier.height(28.dp)
-                    ) {
-                        Text("READ", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-                    }
-                }
-                Spacer(Modifier.height(16.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Bottom
-                ) {
-                    // Smart Comparison Logic
-                    val currentVal = uiState.diodeValue.toFloatOrNull()
-                    val referenceVal = uiState.diodeReferenceValue
-                    val isShort = currentVal != null && currentVal < 0.05f
-                    val isBad = currentVal != null && kotlin.math.abs(currentVal - referenceVal) > 0.1f
-
-                    val (displayColor, statusText) = when {
-                        isShort -> MaterialTheme.colorScheme.error to "SHORT"
-                        isBad -> MaterialTheme.colorScheme.error to "FAIL"
-                        currentVal != null -> MaterialTheme.colorScheme.secondary to "PASS"
-                        else -> MaterialTheme.colorScheme.onSurface to "WAIT"
-                    }
-
-                    Row(verticalAlignment = Alignment.Bottom) {
-                        Text(uiState.diodeValue, fontSize = 36.sp, fontFamily = FontFamily.Monospace, color = displayColor)
-                        if (uiState.diodeValue != "--") {
-                            Text("V", fontFamily = FontFamily.Monospace, fontSize = 18.sp, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp), color = displayColor)
-                        }
-                    }
-
                     Column(horizontalAlignment = Alignment.End) {
-                        Text(
-                            statusText,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            color = displayColor,
-                            fontSize = 18.sp
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top=4.dp)) {
-                            Text("REF:", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(Modifier.width(4.dp))
-                            Text("${String.format("%.3f", uiState.diodeReferenceValue)}V", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(16.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("Adjust Reference:", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Slider(
-                        value = uiState.diodeReferenceValue,
-                        onValueChange = { viewModel.setDiodeReferenceValue(it) },
-                        valueRange = 0.0f..3.3f,
-                        steps = 33,
-                        modifier = Modifier.weight(1f).padding(start = 12.dp)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun UartModeView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
-    val listState = rememberLazyListState()
-
-    // Controlled auto-scrolling that respects pause state
-    LaunchedEffect(uiState.uartLogs.size, uiState.isUartPaused) {
-        if (!uiState.isUartPaused && uiState.uartLogs.isNotEmpty()) {
-            listState.animateScrollToItem(uiState.uartLogs.size - 1)
-        }
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(16.dp)
-    ) {
-        Column {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("> UART_SERIAL_MONITOR", fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Button(
-                        onClick = { viewModel.sendUartStart() },
-                        shape = RoundedCornerShape(4.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                        modifier = Modifier.height(28.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary, contentColor = MaterialTheme.colorScheme.onSecondary)
-                    ) {
-                        Text("START", fontFamily = FontFamily.Monospace, fontSize = 10.sp)
-                    }
-                    Button(
-                        onClick = { viewModel.toggleUartPause() },
-                        shape = RoundedCornerShape(4.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                        modifier = Modifier.height(28.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (uiState.isUartPaused) Color(0xFFFBBF24) else MaterialTheme.colorScheme.tertiary,
-                            contentColor = if (uiState.isUartPaused) Color.Black else MaterialTheme.colorScheme.onTertiary
-                        )
-                    ) {
-                        Text(
-                            if (uiState.isUartPaused) "RESUME" else "PAUSE",
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 10.sp
-                        )
-                    }
-                    Button(
-                        onClick = { viewModel.sendUartStop() },
-                        shape = RoundedCornerShape(4.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                        modifier = Modifier.height(28.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError)
-                    ) {
-                        Text("STOP", fontFamily = FontFamily.Monospace, fontSize = 10.sp)
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                Text("BAUD RATE:", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                val bauds = listOf(9600, 115200, 1500000)
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    bauds.forEach { baud ->
-                        val isSelected = uiState.uartBaudRate == baud
-                        Box(
-                            modifier = Modifier
-                                .border(1.dp, if(isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline, RoundedCornerShape(2.dp))
-                                .background(if(isSelected) MaterialTheme.colorScheme.primary.copy(alpha=0.2f) else Color.Transparent)
-                                .clickable { viewModel.setUartBaudRate(baud) }
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(baud.toString(), fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = if(isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-            Surface(
-                modifier = Modifier.fillMaxWidth().height(300.dp),
-                color = MaterialTheme.colorScheme.background,
-                shape = RoundedCornerShape(4.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-            ) {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize().padding(8.dp)
-                ) {
-                    items(uiState.uartLogs) { log ->
-                        Row(modifier = Modifier.padding(vertical = 2.dp)) {
-                            Text(
-                                "[${log.time}] ",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 10.sp,
-                                fontFamily = FontFamily.Monospace
-                            )
-                            val msgColor = when (log.type) {
-                                LogType.INFO -> MaterialTheme.colorScheme.primary
-                                LogType.CMD -> Color(0xFFD2A8FF)
-                                LogType.RES -> MaterialTheme.colorScheme.secondary
-                            }
-                            Text(
-                                log.message,
-                                color = msgColor,
-                                fontSize = 10.sp,
-                                fontFamily = FontFamily.Monospace
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-fun I2cModeView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
-    val icDictionary = mapOf(
-        "0x3C" to "OLED Display",
-        "0x27" to "LCD I2C Mod",
-        "0x68" to "RTC DS3231/MPU6050",
-        "0x76" to "BME280/BMP280",
-        "0x77" to "BME280/BMP280",
-        "0x57" to "EEPROM (AT24C32)"
-    )
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(16.dp)
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("> I2C_BUS_SCANNER", fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
-                Button(
-                    onClick = { viewModel.sendI2c() },
-                    shape = RoundedCornerShape(4.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                    modifier = Modifier.height(28.dp)
-                ) {
-                    Text("SCAN", fontFamily = FontFamily.Monospace, fontSize = 10.sp)
-                }
-            }
-            Spacer(Modifier.height(16.dp))
-
-            if (uiState.i2cDevices.isEmpty()) {
-                Text("BUS_IDLE / NO_ACK", fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.padding(8.dp))
-            } else {
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    uiState.i2cDevices.forEach { device ->
-                        val knownIc = icDictionary[device]
-                        val displayStr = if (knownIc != null) "$device ($knownIc)" else device
-
-                        Box(
-                            modifier = Modifier
-                                .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha=0.1f))
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                displayStr,
-                                fontSize = 12.sp,
-                                fontFamily = FontFamily.Monospace,
-                                color = MaterialTheme.colorScheme.primary
-                            )
+                        val mv = record.measuredValue
+                        if (mv != null) {
+                            val diff = mv - record.referenceValue
+                            val diffStr = if (diff >= 0) "+%.3f".format(diff) else "%.3f".format(diff)
+                            Text("%.3f V".format(mv), fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Text("ကွာခြား: $diffStr V", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            Text("-- V", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("မတိုင်းတ yet", fontSize = 12.sp)
                         }
                     }
                 }
@@ -632,630 +639,120 @@ fun I2cModeView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
 }
 
 @Composable
-fun ConnectionCard(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
-    // Fix 2: Manage UI expansion locally without triggering immediate connection
-    var selectedConfig by remember { mutableStateOf(ConnectionMode.WIFI) }
-
-    LaunchedEffect(uiState.connectionMode) {
-        if (uiState.connectionMode != ConnectionMode.NONE) {
-            selectedConfig = uiState.connectionMode
-        }
-    }
-
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text("Connection Mode", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.height(16.dp))
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                    .padding(4.dp)
-            ) {
-                val isWifi = selectedConfig == ConnectionMode.WIFI
-                val isBle = selectedConfig == ConnectionMode.BLE
-
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(40.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (isWifi) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
-                        .clickable { selectedConfig = ConnectionMode.WIFI },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        "Wi-Fi",
-                        fontWeight = if(isWifi) FontWeight.Bold else FontWeight.Medium,
-                        color = if(isWifi) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(40.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (isBle) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
-                        .clickable { 
-                            selectedConfig = ConnectionMode.BLE
-                            viewModel.connectBle() 
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        "Bluetooth",
-                        fontWeight = if(isBle) FontWeight.Bold else FontWeight.Medium,
-                        color = if(isBle) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            AnimatedVisibility(visible = selectedConfig == ConnectionMode.WIFI) {
-                Column {
-                    Spacer(Modifier.height(16.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = uiState.wifiIp,
-                            onValueChange = { viewModel.updateWifiIp(it) },
-                            label = { Text("IP Address") },
-                            modifier = Modifier.weight(2f),
-                            singleLine = true
-                        )
-                        OutlinedTextField(
-                            value = uiState.wifiPort,
-                            onValueChange = { viewModel.updateWifiPort(it) },
-                            label = { Text("Port") },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true
-                        )
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Button(
-                        onClick = { viewModel.connectWifi() },
-                        modifier = Modifier.fillMaxWidth().height(48.dp),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text(if (uiState.connectionState == ConnectionState.CONNECTING && uiState.connectionMode == ConnectionMode.WIFI) "Connecting..." else "Connect to Wi-Fi")
-                    }
-                }
-            }
-        }
+fun StatItem(value: String, label: String, color: Color = MaterialTheme.colorScheme.onSurface) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(value, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = color)
+        Text(label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
-@Composable
-fun StatusLogsView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
-    val listState = rememberLazyListState()
-    val context = LocalContext.current
-    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
-        uri?.let { viewModel.saveLogsToFile(context, it) }
-    }
-
-    LaunchedEffect(uiState.appLogs.size) {
-        if (uiState.appLogs.isNotEmpty()) {
-            listState.animateScrollToItem(uiState.appLogs.size - 1)
-        }
-    }
-
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("Diagnostic Logs", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text(
-                    "Clear",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.clickable { viewModel.clearLogs() },
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    "Export",
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.clickable { exportLauncher.launch("esp32_logs_${System.currentTimeMillis()}.txt") },
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
-
-        Surface(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            color = Color(0xFF0D1117),
-            shape = RoundedCornerShape(12.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize().padding(12.dp)
-            ) {
-                items(uiState.appLogs) { log ->
-                    Row(modifier = Modifier.padding(vertical = 2.dp)) {
-                        Text(
-                            "[${log.time}] ",
-                            color = Color(0xFF8B949E),
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
-                        val msgColor = when (log.type) {
-                            LogType.INFO -> Color(0xFF58A6FF)
-                            LogType.CMD -> Color(0xFFD2A8FF)
-                            LogType.RES -> Color(0xFF3FB950)
-                        }
-                        Text(
-                            log.message,
-                            color = msgColor,
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
+// ========== TAB 2 — CLOCK ==========
 
 @Composable
-fun OtgFlashView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("OTG Firmware Flash", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.height(16.dp))
-
-                OutlinedTextField(
-                    value = uiState.usbDeviceName,
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("USB Device") },
-                    modifier = Modifier.fillMaxWidth(),
-                    trailingIcon = {
-                        TextButton(onClick = { viewModel.detectUsbDevice() }) {
-                            Text("Detect")
-                        }
-                    }
-                )
-
-                Spacer(Modifier.height(12.dp))
-
-                OutlinedTextField(
-                    value = uiState.firmwareFileName,
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Firmware File") },
-                    modifier = Modifier.fillMaxWidth(),
-                    trailingIcon = {
-                        TextButton(onClick = { viewModel.setFirmwareFile("esp32_firmware_v2.bin") }) {
-                            Text("Select")
-                        }
-                    }
-                )
-
-                Spacer(Modifier.height(24.dp))
-
-                if (uiState.isFlashing || uiState.flashProgress > 0) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Progress", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("${(uiState.flashProgress * 100).toInt()}%", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        LinearProgressIndicator(
-                            progress = { uiState.flashProgress },
-                            modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
-                            color = MaterialTheme.colorScheme.primary,
-                            trackColor = MaterialTheme.colorScheme.surfaceVariant
-                        )
-                    }
-                    Spacer(Modifier.height(16.dp))
-                }
-
-                Button(
-                    onClick = { viewModel.startFlashing() },
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    enabled = !uiState.isFlashing
-                ) {
-                    Text(if (uiState.isFlashing) "Flashing..." else "Start Flash")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun ConfigView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
-    val scrollState = rememberScrollState()
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-            .verticalScroll(scrollState),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("Appearance", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.height(16.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Dark Theme (Light/Dark)")
-                    Switch(
-                        checked = uiState.isDarkTheme,
-                        onCheckedChange = { viewModel.toggleTheme() }
-                    )
-                }
-            }
-        }
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("ESP32 + Pi Pico Diagnostic Tool လမ်းညွှန်", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, fontSize = 18.sp)
-                Spacer(Modifier.height(12.dp))
-
-                Text(
-                    "၁။ စနစ်ဖွဲ့စည်းပုံ (System Architecture) နှင့် လိုအပ်သော ပစ္စည်းများ",
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    """
-                    ဤ Project သည် Phone Service သမားများအတွက် အထူးပြုလုပ်ထားသော Diagnostic Tool ဖြစ်ပြီး ESP32-S3 နှင့် Raspberry Pi Pico (RP2040) တို့ကို တွဲဖက်အသုံးပြုထားပါသည်။ အခြား မည်သည့် Module မှ ထပ်မံဝယ်ယူရန် မလိုအပ်ပါ။
-                    
-                    • ESP32-S3 Board: Wi-Fi/Bluetooth ဆက်သွယ်ရေး၊ WebSocket နှင့် App သို့ Data ပို့ဆောင်ခြင်းတို့ကို တာဝန်ယူသည်။
-                    • Raspberry Pi Pico (RP2040): တိကျသော ADC (12-bit)၊ PWM ထုတ်လွှင့်ခြင်း နှင့် PIO အသုံးပြုကာ မြန်နှုန်းမြင့် တိုင်းတာမှုများကို ပြုလုပ်ပေးမည့် Precision Co-Processor အဖြစ် လုပ်ဆောင်သည်။
-                    • Jumper Wires နှင့် Multimeter Probes များသာ လိုအပ်သည်။
-                    """.trimIndent(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
-
-                Text(
-                    "၂။ ချိတ်ဆက်ခြင်း (Wiring Diagram)",
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    """
-                    [ ESP32-S3 ] <--- UART ---> [ Pi Pico ]
-                    • ESP32 TX (Pin 17) -> Pico RX (Pin 1)
-                    • ESP32 RX (Pin 16) -> Pico TX (Pin 0)
-                    • ESP32 GND -> Pico GND
-                    • ESP32 3.3V -> Pico 3V3 (Power မျှသုံးရန်)
-                    """.trimIndent(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
-
-                Text(
-                    "၃။ လက်တွေ့ အသုံးတည့်မည့် လုပ်ဆောင်ချက်များ (Practical Solutions)",
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    """
-                    ၁။ Precision Diode & Short Circuit Detection (Pico ADC0 - Pin 26):
-                    Pico ၏ 12-bit ADC ကို အသုံးပြု၍ ဖုန်းဘုတ်ပေါ်ရှိ လိုင်းများ၏ Diode တန်ဖိုးနှင့် Voltage ကို တိကျစွာတိုင်းတာမည်။ 0.05V အောက်ရောက်ပါက Short Circuit အဖြစ် Beep သံဖြင့် သတိပေးမည်။
-
-                    ၂။ PWM Signal Injector (Pico PWM - Pin 15):
-                    ပြင်ပ Module မလိုဘဲ Pico မှ တိုက်ရိုက် PWM လှိုင်းထုတ်ပေးကာ LCD Backlight နှင့် Charge Pump IC များကို လှုံ့ဆော် (Wake-up) စမ်းသပ်နိုင်ပါသည်။
-
-                    ၃။ High-Speed Logic Analyzer (Pico PIO - Pin 2,3,4,5):
-                    Pico ၏ PIO (Programmable I/O) ကို သုံး၍ ဖုန်း၏ I2C/SPI/UART Boot Log များကို အလွန်မြန်ဆန်သော နှုန်းဖြင့် ဖမ်းယူစစ်ဆေးနိုင်ပါသည်။
-
-                    ၄။ Sleep Clock Monitor (Pico Pin 16):
-                    ဖုန်းများ၏ 32.768kHz Sleep Clock နှင့် အခြား Oscillator Frequency များကို အတိအကျ တိုင်းတာပေးနိုင်ပါသည်။
-                    """.trimIndent(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
-                
-                Text(
-                    "၄။ ချိတ်ဆက်အသုံးပြုနည်း (App Usage)",
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    "Tools tab တွင် Wi-Fi သို့မဟုတ် BLE ရွေးချယ်ချိတ်ဆက်ပါ။ Wi-Fi အတွက် 'ESP_Pico_Diag' ကို ချိတ်ဆက်ပြီး Tools, Clock, PWM အစရှိသော Tab များမှတဆင့် လိုအပ်သော လုပ်ဆောင်ချက်များကို ရွေးချယ်အသုံးပြုနိုင်ပါသည်။",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun ClockCheckView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("Clock Frequency Monitor", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.height(16.dp))
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(120.dp)
-                        .background(Color(0xFF0D1117), RoundedCornerShape(8.dp))
-                        .border(1.dp, MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = "${uiState.clockFreq}",
-                            fontSize = 48.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            color = Color(0xFF3FB950)
-                        )
-                        Text(
-                            text = "Hz",
-                            fontSize = 18.sp,
-                            fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    "Connect Pin 5 (ESP32-S3) to the signal source to measure its frequency.",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun PwmModeView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
-    // Fix 1: Use local state to prevent spamming commands while dragging the slider
-    var localFreq by remember(uiState.pwmFreq) { mutableFloatStateOf(uiState.pwmFreq.toFloat()) }
-    var localDuty by remember(uiState.pwmDuty) { mutableFloatStateOf(uiState.pwmDuty.toFloat()) }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text("PWM Generator (Pico)", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.height(8.dp))
-            Text("Inject PWM signal to test circuits (e.g., LCD backlight).", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(16.dp))
-
-            Text("Frequency: ${localFreq.toInt()} Hz", color = MaterialTheme.colorScheme.onSurface)
-            Slider(
-                value = localFreq,
-                onValueChange = { localFreq = it },
-                onValueChangeFinished = { viewModel.sendPwmConfig(localFreq.toInt(), uiState.pwmDuty) },
-                valueRange = 100f..10000f,
-                colors = SliderDefaults.colors(thumbColor = MaterialTheme.colorScheme.primary, activeTrackColor = MaterialTheme.colorScheme.primary)
-            )
-
-            Spacer(Modifier.height(16.dp))
-
-            Text("Duty Cycle: ${localDuty.toInt()}%", color = MaterialTheme.colorScheme.onSurface)
-            Slider(
-                value = localDuty,
-                onValueChange = { localDuty = it },
-                onValueChangeFinished = { viewModel.sendPwmConfig(uiState.pwmFreq, localDuty.toInt()) },
-                valueRange = 0f..100f,
-                colors = SliderDefaults.colors(thumbColor = MaterialTheme.colorScheme.secondary, activeTrackColor = MaterialTheme.colorScheme.secondary)
-            )
-        }
-    }
-}
-
-@Composable
-fun SmartRecordView(viewModel: DiagnosticViewModel, uiState: DiagnosticUiState) {
+fun ClockTab(state: DiagnosticUiState) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
-        // Header Card
         Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+            Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer
+            )
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    "Smart Diode Assistant",
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontSize = 18.sp
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Memory scan for LCD sockets and multi-pin connectors",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                
-                Spacer(Modifier.height(16.dp))
-                
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "Mode: " + if(uiState.smartRecordMode == SmartRecordMode.AUTO) "Auto-Advance" else "Manual Save",
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    
-                    Row {
-                        FilterChip(
-                            selected = uiState.smartRecordMode == SmartRecordMode.MANUAL,
-                            onClick = { viewModel.setSmartRecordMode(SmartRecordMode.MANUAL) },
-                            label = { Text("Manual") }
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        FilterChip(
-                            selected = uiState.smartRecordMode == SmartRecordMode.AUTO,
-                            onClick = { viewModel.setSmartRecordMode(SmartRecordMode.AUTO) },
-                            label = { Text("Auto") }
-                        )
-                    }
-                }
-                
-                Spacer(Modifier.height(16.dp))
-                
-                Button(
-                    onClick = { viewModel.toggleSmartRecording() },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (uiState.isRecordingStarted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                    )
-                ) {
-                    Text(if (uiState.isRecordingStarted) "STOP RECORDING" else "START RECORDING", fontFamily = FontFamily.Monospace)
-                }
-            }
-        }
-        
-        // Live Value & Manual Action
-        if (uiState.isRecordingStarted) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
-                        .background(MaterialTheme.colorScheme.surface)
-                        .padding(16.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        uiState.liveProbeValue + " V",
-                        fontSize = 32.sp,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-                
-                if (uiState.smartRecordMode == SmartRecordMode.MANUAL) {
-                    Spacer(Modifier.width(16.dp))
-                    Button(
-                        onClick = { 
-                            uiState.liveProbeValue.toFloatOrNull()?.let { 
-                                viewModel.recordCurrentPin(it) 
-                            }
-                        },
-                        modifier = Modifier.height(72.dp)
-                    ) {
-                        Text("SAVE\nPIN", fontFamily = FontFamily.Monospace, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    }
-                }
+                Text(
+                    "နာရီကြိမ်နှုန်း",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+                Spacer(Modifier.height(24.dp))
+                Text(
+                    "%,d".format(state.clockFreq),
+                    style = MaterialTheme.typography.displayLarge,
+                    fontSize = 56.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+                Text(
+                    "Hz",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
+                    modifier = Modifier.padding(top = 4.dp)
+                )
             }
         }
-        
-        // Pin List
-        LazyColumn(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(uiState.pinRecords.size) { index ->
-                val record = uiState.pinRecords[index]
-                val isActive = uiState.isRecordingStarted && uiState.currentPinIndex == index
-                
-                val bgColor = when {
-                    isActive -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-                    record.status == PinStatus.PASS -> Color(0xFF1B5E20).copy(alpha = 0.2f)
-                    record.status == PinStatus.FAIL -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
-                    record.status == PinStatus.SHORT -> MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
-                    else -> MaterialTheme.colorScheme.surface
-                }
-                
-                val statusText = when (record.status) {
-                    PinStatus.PENDING -> "--"
-                    PinStatus.PASS -> "PASS"
-                    PinStatus.FAIL -> "FAIL"
-                    PinStatus.SHORT -> "SHORT"
-                }
-                
-                val statusColor = when (record.status) {
-                    PinStatus.PENDING -> MaterialTheme.colorScheme.onSurfaceVariant
-                    PinStatus.PASS -> Color(0xFF4CAF50)
-                    PinStatus.FAIL -> MaterialTheme.colorScheme.error
-                    PinStatus.SHORT -> MaterialTheme.colorScheme.error
-                }
+    }
+}
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .border(
-                            if (isActive) 2.dp else 1.dp,
-                            if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                            RoundedCornerShape(4.dp)
-                        )
-                        .background(bgColor)
-                        .padding(12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text("Pin ${record.pinNumber}: ${record.name}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                        Text("Ref: ${record.referenceValue}V", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    
-                    Column(horizontalAlignment = Alignment.End) {
+// ========== TAB 3 — STATUS / LOGS ==========
+
+@Composable
+fun StatusTab(state: DiagnosticUiState, viewModel: DiagnosticViewModel) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        Text("စနစ် မှတ်တမ်း", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(12.dp))
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { viewModel.clearLogs() }) {
+                Icon(Icons.Default.Delete, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("ရှင်းလင်းမည်")
+            }
+            Button(onClick = { /* share/save */ }) {
+                Icon(Icons.Default.Save, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("သိမ်းဆည်းမည်")
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        Card(
+            Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+        ) {
+            Column(Modifier.padding(12.dp)) {
+                if (state.appLogs.isEmpty()) {
+                    Text(
+                        "မှတ်တမ်းမရှိသေးပါ။ ချိတ်ဆက်မှုစတင်ပါ။",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 14.sp
+                    )
+                } else {
+                    state.appLogs.forEach { log ->
+                        val color = when (log.type) {
+                            LogType.INFO -> MaterialTheme.colorScheme.onSurface
+                            LogType.CMD -> Color(0xFF64B5F6)
+                            LogType.RES -> Color(0xFF81C784)
+                        }
                         Text(
-                            text = if (record.measuredValue != null) String.format("%.3f V", record.measuredValue) else "--",
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            "[${log.time}] ${log.message}",
+                            color = color,
+                            fontSize = 13.sp,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                            modifier = Modifier.padding(vertical = 3.dp)
                         )
-                        Text(statusText, fontSize = 10.sp, color = statusColor, fontWeight = FontWeight.Bold)
                     }
                 }
             }
         }
     }
 }
+
