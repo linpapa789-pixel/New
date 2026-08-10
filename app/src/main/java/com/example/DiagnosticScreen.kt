@@ -78,7 +78,6 @@ fun TopAppBar(state: DiagnosticUiState, viewModel: DiagnosticViewModel) {
             )
         },
         actions = {
-            // Connection Status
             val statusColor = when (state.connectionState) {
                 ConnectionState.CONNECTED -> Color(0xFF4CAF50)
                 ConnectionState.CONNECTING -> Color(0xFFFFC107)
@@ -102,7 +101,6 @@ fun TopAppBar(state: DiagnosticUiState, viewModel: DiagnosticViewModel) {
                 Text(statusText, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
-            // Theme Toggle
             IconButton(onClick = { viewModel.toggleTheme() }) {
                 Icon(
                     if (state.isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
@@ -110,7 +108,6 @@ fun TopAppBar(state: DiagnosticUiState, viewModel: DiagnosticViewModel) {
                 )
             }
 
-            // Overflow Menu
             var showMenu by remember { mutableStateOf(false) }
             IconButton(onClick = { showMenu = true }) {
                 Icon(Icons.Default.MoreVert, contentDescription = "အခြားရွေးချယ်စရာ")
@@ -157,8 +154,6 @@ fun BottomNavigationBar(state: DiagnosticUiState, viewModel: DiagnosticViewModel
     }
 }
 
-// ========== TAB 0 — TOOLS ==========
-
 @Composable
 fun ToolsTab(state: DiagnosticUiState, viewModel: DiagnosticViewModel) {
     Column(
@@ -168,7 +163,6 @@ fun ToolsTab(state: DiagnosticUiState, viewModel: DiagnosticViewModel) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Connection Panel
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
@@ -229,7 +223,6 @@ fun ToolsTab(state: DiagnosticUiState, viewModel: DiagnosticViewModel) {
             }
         }
 
-        // Mode Selector
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
                 Text("စမ်းသပ်မှု အမျိုးအစား", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -259,22 +252,15 @@ fun ToolsTab(state: DiagnosticUiState, viewModel: DiagnosticViewModel) {
             }
         }
 
-        // === DIODE MODE ===
         if (state.hardwareMode == HardwareMode.DIODE) {
             DiodePanel(state, viewModel)
         }
-
-        // === UART MODE ===
         if (state.hardwareMode == HardwareMode.UART) {
             UartPanel(state, viewModel)
         }
-
-        // === I2C MODE ===
         if (state.hardwareMode == HardwareMode.I2C) {
             I2CPanel(state, viewModel)
         }
-
-        // === PWM MODE ===
         if (state.hardwareMode == HardwareMode.PWM) {
             PwmPanel(state, viewModel)
         }
@@ -299,7 +285,8 @@ fun DiodePanel(state: DiagnosticUiState, viewModel: DiagnosticViewModel) {
 
     Card(
         Modifier.fillMaxWidth(),
-        border = Border(2.dp, valueColor.copy(alpha = 0.7f), RoundedCornerShape(16.dp))
+        border = BorderStroke(2.dp, valueColor.copy(alpha = 0.7f)),
+        shape = RoundedCornerShape(16.dp)
     ) {
         Column(
             Modifier
@@ -330,7 +317,6 @@ fun DiodePanel(state: DiagnosticUiState, viewModel: DiagnosticViewModel) {
 
             Spacer(Modifier.height(16.dp))
 
-            // Reference
             Text(
                 "ရည်ညွှန်းတန်ဖိုး: %.3f V".format(state.diodeReferenceValue),
                 style = MaterialTheme.typography.bodyMedium
@@ -387,7 +373,6 @@ fun UartPanel(state: DiagnosticUiState, viewModel: DiagnosticViewModel) {
 
             Spacer(Modifier.height(12.dp))
 
-            // Baud Rate
             Text("Baud Rate: ${state.uartBaudRate}", style = MaterialTheme.typography.bodyMedium)
             val baudList = listOf(9600, 19200, 38400, 57600, 115200)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -402,7 +387,6 @@ fun UartPanel(state: DiagnosticUiState, viewModel: DiagnosticViewModel) {
 
             Spacer(Modifier.height(12.dp))
 
-            // Log Box
             Card(
                 Modifier
                     .fillMaxWidth()
@@ -516,8 +500,6 @@ fun PwmPanel(state: DiagnosticUiState, viewModel: DiagnosticViewModel) {
     }
 }
 
-// ========== TAB 1 — SMART RECORD ==========
-
 @Composable
 fun SmartRecordTab(state: DiagnosticUiState, viewModel: DiagnosticViewModel) {
     Column(
@@ -568,7 +550,6 @@ fun SmartRecordTab(state: DiagnosticUiState, viewModel: DiagnosticViewModel) {
 
                 Spacer(Modifier.height(16.dp))
 
-                // Summary
                 val total = state.pinRecords.size
                 val pass = state.pinRecords.count { it.status == PinStatus.PASS }
                 val fail = state.pinRecords.count { it.status == PinStatus.FAIL }
@@ -583,7 +564,6 @@ fun SmartRecordTab(state: DiagnosticUiState, viewModel: DiagnosticViewModel) {
             }
         }
 
-        // Pin Cards
         state.pinRecords.forEachIndexed { idx, record ->
             val cardBg = when (record.status) {
                 PinStatus.PASS -> Color(0xFF4CAF50).copy(alpha = 0.15f)
@@ -602,9 +582,10 @@ fun SmartRecordTab(state: DiagnosticUiState, viewModel: DiagnosticViewModel) {
             Card(
                 Modifier
                     .fillMaxWidth()
-                    .then(if (isCurrent) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp)) else Modifier),
+                    .then(if (isCurrent) Modifier.border(BorderStroke(3.dp, MaterialTheme.colorScheme.primary), RoundedCornerShape(12.dp)) else Modifier),
                 colors = CardDefaults.cardColors(containerColor = cardBg),
-                border = if (!isCurrent) Border(1.dp, borderColor.copy(alpha = 0.6f), RoundedCornerShape(12.dp)) else null
+                border = if (!isCurrent) BorderStroke(1.dp, borderColor.copy(alpha = 0.6f)) else null,
+                shape = RoundedCornerShape(12.dp)
             ) {
                 Row(
                     Modifier
@@ -645,8 +626,6 @@ fun StatItem(value: String, label: String, color: Color = MaterialTheme.colorSch
         Text(label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
-
-// ========== TAB 2 — CLOCK ==========
 
 @Composable
 fun ClockTab(state: DiagnosticUiState) {
@@ -695,8 +674,6 @@ fun ClockTab(state: DiagnosticUiState) {
     }
 }
 
-// ========== TAB 3 — STATUS / LOGS ==========
-
 @Composable
 fun StatusTab(state: DiagnosticUiState, viewModel: DiagnosticViewModel) {
     Column(
@@ -713,7 +690,7 @@ fun StatusTab(state: DiagnosticUiState, viewModel: DiagnosticViewModel) {
                 Spacer(Modifier.width(6.dp))
                 Text("ရှင်းလင်းမည်")
             }
-            Button(onClick = { /* share/save */ }) {
+            Button(onClick = { }) {
                 Icon(Icons.Default.Save, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("သိမ်းဆည်းမည်")
@@ -755,4 +732,3 @@ fun StatusTab(state: DiagnosticUiState, viewModel: DiagnosticViewModel) {
         }
     }
 }
-
